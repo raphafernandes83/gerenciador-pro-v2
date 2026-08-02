@@ -1,0 +1,1 @@
+window.GP_FORM_CONFIG={endpoint:"COLE_AQUI_A_URL_DO_GOOGLE_APPS_SCRIPT",requestTimeoutMs:15000};
