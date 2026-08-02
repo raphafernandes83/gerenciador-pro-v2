@@ -1,0 +1,344 @@
+name: Diagnóstico completo do formulário
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/diagnostico-formulario.yml'
+      - 'script.js'
+      - 'config.js'
+      - 'index.html'
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Testar Apps Script diretamente
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ENDPOINT: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - name: Consultar contagem inicial
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --silent --show-error --max-time 60 \
+            "$ENDPOINT?diagnostico=before-${GITHUB_RUN_ID}" \
+            -o before.json
+          cat before.json
+
+      - name: Enviar cadastro único diretamente
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNIQUE="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          EMAIL="teste-chatgpt-${UNIQUE}@example.com"
+          PHONE="552199${GITHUB_RUN_ID: -7}"
+          SUBMISSION_ID="github-backend-${UNIQUE}"
+
+          printf '%s' "$EMAIL" > test-email.txt
+          printf '%s' "$PHONE" > test-phone.txt
+          printf '%s' "$SUBMISSION_ID" > test-submission-id.txt
+
+          curl -L --fail --silent --show-error --max-time 60 \
+            -X POST "$ENDPOINT" \
+            --data-urlencode "submission_id=$SUBMISSION_ID" \
+            --data-urlencode "tipo_interesse=comprar" \
+            --data-urlencode "nome=TESTE AUTOMÁTICO CHATGPT BACKEND — PODE APAGAR" \
+            --data-urlencode "whatsapp=$PHONE" \
+            --data-urlencode "email=$EMAIL" \
+            --data-urlencode "pais=Brasil" \
+            --data-urlencode "cidade_estado=Rio de Janeiro — RJ" \
+            --data-urlencode "contato_preferido=WhatsApp" \
+            --data-urlencode "experiencia_trading=Teste automático" \
+            --data-urlencode "principal_objetivo=Validar gravação" \
+            --data-urlencode "observacao=Cadastro criado pelo diagnóstico automatizado do GitHub Actions." \
+            --data-urlencode "consentimento=Sim" \
+            --data-urlencode "origem=github-actions-backend" \
+            --data-urlencode "pagina_url=https://raphafernandes83.github.io/gerenciador-pro-v2/" \
+            --data-urlencode "enviado_em_local=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --data-urlencode "user_agent=GitHub Actions curl" \
+            -o first-post.json
+          cat first-post.json
+
+      - name: Confirmar aumento da contagem
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 4
+          curl -L --fail --silent --show-error --max-time 60 \
+            "$ENDPOINT?diagnostico=after-${GITHUB_RUN_ID}" \
+            -o after.json
+          cat after.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          before = json.loads(Path('before.json').read_text())
+          posted = json.loads(Path('first-post.json').read_text())
+          after = json.loads(Path('after.json').read_text())
+
+          assert before.get('ok') is True, before
+          assert posted.get('ok') is True, posted
+          assert posted.get('duplicate') is False, posted
+          assert after.get('ok') is True, after
+          assert after['totalCadastros'] == before['totalCadastros'] + 1, {
+              'before': before,
+              'posted': posted,
+              'after': after,
+          }
+          print('BACKEND_GRAVOU_CORRETAMENTE')
+          PY
+
+      - name: Repetir o mesmo cadastro e validar duplicidade
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMAIL="$(cat test-email.txt)"
+          PHONE="$(cat test-phone.txt)"
+          SUBMISSION_ID="$(cat test-submission-id.txt)-duplicado"
+
+          curl -L --fail --silent --show-error --max-time 60 \
+            -X POST "$ENDPOINT" \
+            --data-urlencode "submission_id=$SUBMISSION_ID" \
+            --data-urlencode "tipo_interesse=comprar" \
+            --data-urlencode "nome=TESTE AUTOMÁTICO CHATGPT BACKEND DUPLICADO" \
+            --data-urlencode "whatsapp=$PHONE" \
+            --data-urlencode "email=$EMAIL" \
+            --data-urlencode "pais=Brasil" \
+            --data-urlencode "consentimento=Sim" \
+            --data-urlencode "origem=github-actions-backend-duplicado" \
+            -o duplicate-post.json
+          cat duplicate-post.json
+
+          sleep 3
+          curl -L --fail --silent --show-error --max-time 60 \
+            "$ENDPOINT?diagnostico=final-${GITHUB_RUN_ID}" \
+            -o final.json
+          cat final.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          after = json.loads(Path('after.json').read_text())
+          duplicate = json.loads(Path('duplicate-post.json').read_text())
+          final = json.loads(Path('final.json').read_text())
+
+          assert duplicate.get('ok') is True, duplicate
+          assert duplicate.get('duplicate') is True, duplicate
+          assert final['totalCadastros'] == after['totalCadastros'], {
+              'after': after,
+              'duplicate': duplicate,
+              'final': final,
+          }
+          print('DUPLICIDADE_FUNCIONA_CORRETAMENTE')
+          PY
+
+      - name: Gerar resumo do backend
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Diagnóstico do backend'
+            echo
+            echo '### before.json'
+            echo '```json'
+            cat before.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### first-post.json'
+            echo '```json'
+            cat first-post.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### after.json'
+            echo '```json'
+            cat after.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### duplicate-post.json'
+            echo '```json'
+            cat duplicate-post.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### final.json'
+            echo '```json'
+            cat final.json 2>/dev/null || true
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar evidências do backend
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-backend
+          path: |
+            before.json
+            first-post.json
+            after.json
+            duplicate-post.json
+            final.json
+            test-email.txt
+            test-phone.txt
+            test-submission-id.txt
+          if-no-files-found: warn
+
+  navegador:
+    name: Testar o formulário publicado no navegador
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ENDPOINT: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      SITE: https://raphafernandes83.github.io/gerenciador-pro-v2/
+    steps:
+      - name: Preparar Playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.54.2 >/dev/null 2>&1
+          npx playwright install --with-deps chromium
+
+      - name: Executar cadastro pelo site real
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > browser-test.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const endpoint = process.env.ENDPOINT;
+          const site = process.env.SITE;
+          const unique = `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
+          const email = `teste-chatgpt-browser-${unique}@example.com`;
+          const phone = `552198${String(process.env.GITHUB_RUN_ID).slice(-7)}`;
+
+          async function getStatus(label) {
+            const response = await fetch(`${endpoint}?diagnostico=${label}-${Date.now()}`, {
+              redirect: 'follow',
+              cache: 'no-store'
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(`GET ${label} falhou: ${response.status} ${text}`);
+            return JSON.parse(text);
+          }
+
+          const before = await getStatus('browser-before');
+          fs.writeFileSync('browser-before.json', JSON.stringify(before, null, 2));
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          const browserLogs = [];
+
+          page.on('console', message => browserLogs.push(`[console:${message.type()}] ${message.text()}`));
+          page.on('pageerror', error => browserLogs.push(`[pageerror] ${error.stack || error.message}`));
+          page.on('requestfailed', request => browserLogs.push(`[requestfailed] ${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`));
+
+          try {
+            await page.goto(`${site}?diagnostico=${Date.now()}#cadastro`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 60000
+            });
+
+            await page.waitForFunction(() => Boolean(window.GP_FORM_CONFIG?.endpoint), null, { timeout: 30000 });
+            await page.locator('#nome').fill('TESTE AUTOMÁTICO CHATGPT NAVEGADOR — PODE APAGAR');
+            await page.locator('#whatsapp').fill(phone);
+            await page.locator('#email').fill(email);
+            await page.locator('#pais').selectOption({ label: 'Brasil' });
+            await page.locator('#cidade_estado').fill('Rio de Janeiro — RJ');
+            await page.locator('#consentimento').check();
+
+            await page.locator('#submit-button').click();
+
+            await Promise.race([
+              page.locator('#success-state').waitFor({ state: 'visible', timeout: 60000 }),
+              page.locator('#form-notice').waitFor({ state: 'visible', timeout: 60000 })
+            ]);
+
+            const successVisible = await page.locator('#success-state').isVisible();
+            const noticeVisible = await page.locator('#form-notice').isVisible();
+            const noticeText = noticeVisible ? await page.locator('#form-notice').innerText() : '';
+            const successText = successVisible ? await page.locator('#success-message').innerText() : '';
+
+            await page.screenshot({ path: 'browser-result.png', fullPage: true });
+            fs.writeFileSync('browser-ui.json', JSON.stringify({
+              successVisible,
+              noticeVisible,
+              noticeText,
+              successText,
+              email,
+              phone,
+              endpoint: await page.evaluate(() => window.GP_FORM_CONFIG?.endpoint || null)
+            }, null, 2));
+
+            if (!successVisible) {
+              throw new Error(`O site não mostrou sucesso. Aviso: ${noticeText}`);
+            }
+          } finally {
+            fs.writeFileSync('browser-console.log', browserLogs.join('\n'));
+            await browser.close();
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const after = await getStatus('browser-after');
+          fs.writeFileSync('browser-after.json', JSON.stringify(after, null, 2));
+
+          if (after.totalCadastros !== before.totalCadastros + 1) {
+            throw new Error(`O navegador mostrou sucesso, mas a contagem não aumentou. Antes=${before.totalCadastros}, depois=${after.totalCadastros}`);
+          }
+
+          console.log(JSON.stringify({ ok: true, before, after, email, phone }, null, 2));
+          EOF
+
+          node browser-test.mjs | tee browser-output.log
+
+      - name: Gerar resumo do navegador
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Diagnóstico do navegador'
+            echo
+            echo '### Interface'
+            echo '```json'
+            cat browser-ui.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### Contagem anterior'
+            echo '```json'
+            cat browser-before.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### Contagem posterior'
+            echo '```json'
+            cat browser-after.json 2>/dev/null || true
+            echo
+            echo '```'
+            echo '### Console do navegador'
+            echo '```text'
+            cat browser-console.log 2>/dev/null || true
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar evidências do navegador
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-navegador
+          path: |
+            browser-test.mjs
+            browser-before.json
+            browser-after.json
+            browser-ui.json
+            browser-console.log
+            browser-output.log
+            browser-result.png
+          if-no-files-found: warn
