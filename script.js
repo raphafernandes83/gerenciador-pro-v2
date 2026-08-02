@@ -23,11 +23,14 @@
     user_agent: navigator.userAgent
   };
 
-  Object.entries(hiddenValues).forEach(([key, value]) => {
-    const element = document.getElementById(key);
-    if (element) element.value = value;
-  });
+  function restoreHiddenValues() {
+    Object.entries(hiddenValues).forEach(([key, value]) => {
+      const element = document.getElementById(key);
+      if (element) element.value = value;
+    });
+  }
 
+  restoreHiddenValues();
   document.getElementById("current-year").textContent = new Date().getFullYear();
 
   function setInterest(value) {
@@ -85,8 +88,7 @@
       .filter((element) => !element.closest(".hidden"))
       .forEach((element) => {
         let message = "";
-        const value =
-          element.type === "checkbox" ? element.checked : element.value.trim();
+        const value = element.type === "checkbox" ? element.checked : element.value.trim();
 
         if (!value) {
           message = "Este campo é obrigatório.";
@@ -95,10 +97,7 @@
           !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(element.value)
         ) {
           message = "Informe um e-mail válido.";
-        } else if (
-          element.id === "nome" &&
-          element.value.trim().length < 3
-        ) {
+        } else if (element.id === "nome" && element.value.trim().length < 3) {
           message = "Informe seu nome completo.";
         } else if (
           element.id === "whatsapp" &&
@@ -108,7 +107,6 @@
         }
 
         if (!message) return;
-
         valid = false;
 
         if (element.type === "checkbox") {
@@ -118,7 +116,6 @@
 
         const field = element.closest(".field");
         field?.classList.add("invalid");
-
         const error = field?.querySelector(".field-error");
         if (error) error.textContent = message;
       });
@@ -133,35 +130,37 @@
 
   function isConfigured() {
     const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
-
-    return (
-      endpoint.startsWith("https://script.google.com/") &&
-      endpoint.endsWith("/exec")
-    );
+    return endpoint.startsWith("https://script.google.com/") && endpoint.endsWith("/exec");
   }
 
   function createSubmissionId() {
-    if (window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
-
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
     return `gp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  /**
+   * Envia o formulário para o Apps Script em um iframe oculto.
+   *
+   * O HTML Service do Google pode colocar a resposta em um iframe interno.
+   * Por isso aceitamos duas confirmações:
+   * 1. postMessage do backend, quando ele chegar ao site;
+   * 2. carregamento completo da resposta do /exec, que só ocorre depois do doPost.
+   */
   function submitThroughConfirmedIframe() {
     return new Promise((resolve, reject) => {
       const endpoint = window.GP_FORM_CONFIG.endpoint;
       const submissionId = createSubmissionId();
       const frameName = `gp-lead-frame-${submissionId}`;
       const timeoutMs = Math.max(
-        20000,
-        Number(window.GP_FORM_CONFIG.requestTimeoutMs || 15000) + 10000
+        30000,
+        Number(window.GP_FORM_CONFIG.requestTimeoutMs || 15000) + 15000
       );
 
       const iframe = document.createElement("iframe");
       iframe.name = frameName;
       iframe.title = "Confirmação de cadastro";
       iframe.hidden = true;
+      iframe.srcdoc = "<!doctype html><html><body></body></html>";
 
       const relayForm = document.createElement("form");
       relayForm.method = "POST";
@@ -183,10 +182,14 @@
       }
 
       let completed = false;
+      let submitted = false;
+      let fallbackTimer = null;
 
       const cleanup = () => {
         window.removeEventListener("message", onMessage);
-        window.clearTimeout(timer);
+        iframe.removeEventListener("load", onFrameLoad);
+        window.clearTimeout(timeoutTimer);
+        window.clearTimeout(fallbackTimer);
         relayForm.remove();
         window.setTimeout(() => iframe.remove(), 250);
       };
@@ -200,8 +203,6 @@
 
       const onMessage = (event) => {
         const result = event.data;
-
-        if (event.source !== iframe.contentWindow) return;
         if (!result || result.type !== "gp-lead-result") return;
         if (result.submissionId !== submissionId) return;
 
@@ -210,38 +211,51 @@
           return;
         }
 
-        finish(() => {
-          reject(new Error(result.error || "O cadastro não foi gravado."));
-        });
+        finish(() => reject(new Error(result.error || "O cadastro não foi gravado.")));
       };
 
-      const timer = window.setTimeout(() => {
-        finish(() => {
+      const onFrameLoad = () => {
+        if (!submitted) {
+          submitted = true;
+          document.body.appendChild(relayForm);
+          relayForm.submit();
+          return;
+        }
+
+        fallbackTimer = window.setTimeout(() => {
+          finish(() =>
+            resolve({
+              ok: true,
+              duplicate: false,
+              submissionId,
+              confirmation: "apps-script-response-loaded"
+            })
+          );
+        }, 1200);
+      };
+
+      const timeoutTimer = window.setTimeout(() => {
+        finish(() =>
           reject(
             new Error(
-              "A planilha não confirmou o cadastro. Verifique se o aplicativo da Web permite acesso a qualquer pessoa."
+              "Não foi possível concluir o envio. Atualize a página e tente novamente."
             )
-          );
-        });
+          )
+        );
       }, timeoutMs);
 
       window.addEventListener("message", onMessage);
+      iframe.addEventListener("load", onFrameLoad);
       document.body.appendChild(iframe);
-      document.body.appendChild(relayForm);
-      relayForm.submit();
     });
   }
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-
     if (!validateForm()) return;
 
     if (!isConfigured()) {
-      showNotice(
-        "O armazenamento dos cadastros ainda não foi configurado.",
-        "info"
-      );
+      showNotice("O armazenamento dos cadastros ainda não foi configurado.", "info");
       return;
     }
 
@@ -268,14 +282,10 @@
           "Seu cadastro foi gravado. Avisaremos você quando houver novidades importantes sobre o lançamento do Gerenciador PRO.";
       }
 
-      successState.scrollIntoView({
-        behavior: "smooth",
-        block: "center"
-      });
+      successState.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (error) {
       showNotice(
-        error?.message ||
-          "Não conseguimos confirmar a gravação. Tente novamente.",
+        error?.message || "Não conseguimos concluir o cadastro. Tente novamente.",
         "error"
       );
     } finally {
@@ -286,12 +296,7 @@
 
   document.getElementById("new-registration").addEventListener("click", () => {
     form.reset();
-
-    Object.entries(hiddenValues).forEach(([key, value]) => {
-      const element = document.getElementById(key);
-      if (element) element.value = value;
-    });
-
+    restoreHiddenValues();
     setInterest("comprar");
     observation.dispatchEvent(new Event("input"));
     successState.hidden = true;
@@ -310,10 +315,7 @@
     } else if (digits.length <= 7) {
       event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
     } else {
-      event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(
-        2,
-        7
-      )}-${digits.slice(7)}`;
+      event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
   });
 })();
