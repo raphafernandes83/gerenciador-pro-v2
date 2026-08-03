@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Entre na lista de interessados do Gerenciador PRO como futuro usuário ou parceiro revendedor.">
+  <meta name="description" content="Conheça o Gerenciador PRO, aplicativo web instalável para planejamento, registro, gestão de risco e análise de operações de trading.">
   <meta name="theme-color" content="#090d14">
-  <meta property="og:title" content="Gerenciador PRO — Lista de interessados">
-  <meta property="og:description" content="Cadastre-se para receber novidades do lançamento ou conhecer o futuro programa de revendedores.">
+  <meta property="og:title" content="Gerenciador PRO — Planejamento e análise de operações">
+  <meta property="og:description" content="Organize sessões, registre operações, acompanhe metas e analise sua evolução com mais clareza e disciplina.">
   <meta property="og:type" content="website">
-  <title>Gerenciador PRO — Lista de interessados</title>
+  <title>Gerenciador PRO — Planejamento e análise de operações</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <script defer src="config.js"></script>
-  <script defer src="script.js"></script>
+  <link rel="stylesheet" href="styles.css?v=20260803-1">
+  <script defer src="config.js?v=20260803-1"></script>
+  <script defer src="script.js?v=20260803-1"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -28,75 +28,241 @@
         <small>Pré-lançamento</small>
       </span>
     </a>
-    <a class="header-link" href="#cadastro">Entrar na lista</a>
+    <nav class="header-nav" aria-label="Navegação principal">
+      <a href="#recursos">Recursos</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a class="header-link" href="#cadastro">Entrar na lista</a>
+    </nav>
   </header>
 
   <main>
     <section class="hero" id="inicio">
       <div class="hero-copy">
-        <span class="eyebrow"><i></i> Cadastros antecipados abertos</span>
-        <h1>Prepare-se para uma nova forma de <span>organizar sua evolução.</span></h1>
+        <span class="eyebrow"><i></i> Aplicativo web instalável em desenvolvimento</span>
+        <h1>Planeje, registre e analise suas operações com <span>mais clareza e disciplina.</span></h1>
         <p class="hero-description">
-          O Gerenciador PRO está sendo desenvolvido como uma plataforma educacional para ajudar traders
-          a acompanharem suas atividades, criarem disciplina e tomarem decisões mais organizadas.
+          O Gerenciador PRO é uma ferramenta educacional e organizacional criada para transformar operações isoladas em um processo estruturado: você prepara a sessão, registra cada resultado, acompanha os limites definidos e analisa o próprio histórico.
         </p>
         <div class="hero-actions">
           <a class="button button-primary" href="#cadastro">Quero participar <span>→</span></a>
-          <a class="button button-secondary" href="#como-funciona">Como funciona</a>
+          <a class="button button-secondary" href="#recursos">Conhecer os recursos</a>
         </div>
         <div class="trust-row">
           <span>✓ Cadastro gratuito</span>
           <span>✓ Sem compromisso de compra</span>
-          <span>✓ Aviso no lançamento</span>
+          <span>✓ Finalidade educacional</span>
         </div>
       </div>
 
-      <aside class="hero-card" aria-label="Benefícios da lista antecipada">
-        <div class="card-glow" aria-hidden="true"></div>
-        <span class="mini-label">LISTA ANTECIPADA</span>
-        <h2>Escolha como você quer participar</h2>
-        <div class="participation-item">
-          <span class="item-icon">01</span>
-          <div>
-            <strong>Futuro usuário</strong>
-            <p>Receba as novidades e seja avisado quando o acesso estiver disponível.</p>
+      <aside class="product-preview" aria-label="Resumo das áreas do aplicativo">
+        <div class="preview-topbar">
+          <div class="preview-brand"><span>GP</span><strong>Gerenciador PRO</strong></div>
+          <span class="preview-status"><i></i> Sessão organizada</span>
+        </div>
+        <div class="preview-screen">
+          <div class="preview-metric primary">
+            <small>Capital atual</small>
+            <strong>R$ 10.000,00</strong>
+            <span>Base da sessão</span>
+          </div>
+          <div class="preview-metric">
+            <small>Progresso da meta</small>
+            <strong>0%</strong>
+            <div class="metric-bar"><i></i></div>
+          </div>
+          <div class="preview-metric">
+            <small>Risco utilizado</small>
+            <strong>0%</strong>
+            <div class="metric-bar danger"><i></i></div>
           </div>
         </div>
-        <div class="participation-item">
-          <span class="item-icon">02</span>
-          <div>
-            <strong>Revendedor ou parceiro</strong>
-            <p>Demonstre interesse no futuro programa de indicação e revenda.</p>
-          </div>
+        <div class="preview-tabs" aria-hidden="true">
+          <span class="active">Plano</span>
+          <span>Dashboard</span>
+          <span>Diário</span>
+          <span>Análise</span>
         </div>
-        <div class="card-footer">
-          <span class="pulse-dot"></span>
-          <span>Cadastros sendo organizados para o lançamento</span>
+        <div class="preview-footer">
+          <span>Planejamento</span><span>Registro</span><span>Análise</span>
         </div>
       </aside>
     </section>
 
-    <section class="steps-section" id="como-funciona">
+    <section class="definition-section" id="produto">
+      <div class="definition-copy">
+        <span class="eyebrow"><i></i> O que é o Gerenciador PRO</span>
+        <h2>Um centro de organização para a rotina do trader.</h2>
+        <p>
+          Ele não envia sinais, não opera por você e não substitui estudo ou responsabilidade individual. O aplicativo organiza parâmetros, sessões, resultados e indicadores para que o usuário consiga enxergar o que fez, como fez e como seu desempenho evoluiu.
+        </p>
+      </div>
+      <div class="definition-points">
+        <article><span>01</span><div><strong>Aplicativo web</strong><p>Funciona pelo navegador e possui estrutura para instalação como aplicativo.</p></div></article>
+        <article><span>02</span><div><strong>Gestão de operações</strong><p>Planeja valores, registra resultados e mantém o histórico de cada sessão.</p></div></article>
+        <article><span>03</span><div><strong>Análise educacional</strong><p>Apresenta métricas, gráficos e simulações para estudo do próprio comportamento.</p></div></article>
+      </div>
+    </section>
+
+    <section class="features-section" id="recursos">
       <div class="section-heading">
-        <span class="eyebrow"><i></i> Simples e rápido</span>
-        <h2>Você leva menos de dois minutos</h2>
+        <span class="eyebrow"><i></i> Recursos comprovados no aplicativo</span>
+        <h2>Tudo o que o Gerenciador PRO organiza</h2>
+        <p>As funções abaixo foram mapeadas diretamente na estrutura atual do produto em desenvolvimento.</p>
+      </div>
+
+      <div class="features-grid">
+        <article class="feature-card">
+          <span class="feature-number">01</span>
+          <div class="feature-icon">◎</div>
+          <h3>Planejamento da sessão</h3>
+          <p>Defina os parâmetros antes de começar e visualize o plano calculado.</p>
+          <ul>
+            <li>Capital inicial e percentual de entrada</li>
+            <li>Meta e limite de perda</li>
+            <li>Seleção de payout</li>
+            <li>Mão fixa ou ciclos de recuperação</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">02</span>
+          <div class="feature-icon">W/L</div>
+          <h3>Registro de operações</h3>
+          <p>Registre cada resultado no momento em que ele acontece.</p>
+          <ul>
+            <li>Vitória ou derrota</li>
+            <li>Valor, retorno e horário</li>
+            <li>Tags personalizadas</li>
+            <li>Notas sobre a entrada</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">03</span>
+          <div class="feature-icon">↻</div>
+          <h3>Controle da sessão</h3>
+          <p>Separe estudo de operação real e mantenha o ciclo da sessão organizado.</p>
+          <ul>
+            <li>Sessão oficial ou simulação</li>
+            <li>Retomada de sessão interrompida</li>
+            <li>Desfazer a última operação</li>
+            <li>Finalização e arquivamento</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">04</span>
+          <div class="feature-icon">◇</div>
+          <h3>Metas e gestão de risco</h3>
+          <p>Acompanhe quanto já avançou e quanto risco ainda está disponível.</p>
+          <ul>
+            <li>Stop Win e Stop Loss calculados</li>
+            <li>Alertas ao atingir 80% do limite</li>
+            <li>Progresso monetário e percentual</li>
+            <li>Bloqueio disciplinar configurável</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">05</span>
+          <div class="feature-icon">▥</div>
+          <h3>Dashboard de performance</h3>
+          <p>Transforme o histórico em indicadores visuais e comparáveis.</p>
+          <ul>
+            <li>Win Rate, Loss Rate e Profit Factor</li>
+            <li>Expectativa, payoff e drawdown</li>
+            <li>Curva de patrimônio e assertividade</li>
+            <li>Filtros por período e tipo de sessão</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">06</span>
+          <div class="feature-icon">◷</div>
+          <h3>Diário, timeline e replay</h3>
+          <p>Volte ao passado para entender a sequência e revisar decisões.</p>
+          <ul>
+            <li>Histórico visual do dia</li>
+            <li>Sequências de vitórias e derrotas</li>
+            <li>Diário de sessões arquivadas</li>
+            <li>Replay, edição e exclusão segura</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">07</span>
+          <div class="feature-icon">⌁</div>
+          <h3>Análise estratégica</h3>
+          <p>Compare padrões do próprio histórico e teste cenários hipotéticos.</p>
+          <ul>
+            <li>Análise por dia, hora, tag e payout</li>
+            <li>Diagnóstico quantitativo por categoria</li>
+            <li>Otimizador de metas e risco</li>
+            <li>Laboratório com simulações de cenários</li>
+          </ul>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-number">08</span>
+          <div class="feature-icon">◈</div>
+          <h3>Experiência e proteção</h3>
+          <p>Personalize o ambiente e reduza o risco de perder informações locais.</p>
+          <ul>
+            <li>Modo guiado, Zen e compacto</li>
+            <li>Temas, preferências e notificações</li>
+            <li>Armazenamento local e recuperação de sessão</li>
+            <li>Lixeira com restauração por até 30 dias</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="metrics-section" aria-label="Indicadores disponíveis">
+      <div class="metrics-copy">
+        <span class="eyebrow"><i></i> Leitura do próprio desempenho</span>
+        <h2>Dados que deixam de ficar espalhados.</h2>
+        <p>O aplicativo reúne as informações da operação em um único painel, permitindo comparar sessões, identificar padrões e acompanhar a evolução de forma visual.</p>
+      </div>
+      <div class="metrics-cloud">
+        <span>Win Rate</span><span>Loss Rate</span><span>Profit Factor</span><span>Drawdown</span><span>Payoff</span><span>Expectativa</span><span>Sequências</span><span>Curva de capital</span><span>Resultado por tag</span><span>Risco utilizado</span>
+      </div>
+    </section>
+
+    <section class="workflow-section" id="como-funciona">
+      <div class="section-heading">
+        <span class="eyebrow"><i></i> Fluxo de utilização</span>
+        <h2>Da preparação à análise</h2>
+        <p>O Gerenciador PRO foi estruturado para acompanhar todas as etapas da sessão.</p>
+      </div>
+      <div class="workflow-list">
+        <article><span>1</span><div><h3>Configure</h3><p>Informe capital, entrada, payout, meta, limite de perda e estratégia de gerenciamento.</p></div></article>
+        <article><span>2</span><div><h3>Inicie a sessão</h3><p>Escolha entre modo oficial ou simulação e receba o plano de operações calculado.</p></div></article>
+        <article><span>3</span><div><h3>Registre</h3><p>Marque cada Win ou Loss, adicione tag e observação e acompanhe a atualização do capital.</p></div></article>
+        <article><span>4</span><div><h3>Acompanhe</h3><p>Veja progresso da meta, risco usado, sequência de resultados e alertas de proximidade.</p></div></article>
+        <article><span>5</span><div><h3>Analise</h3><p>Consulte dashboard, diário, replay, gráficos, diagnósticos e simulações do histórico.</p></div></article>
+      </div>
+    </section>
+
+    <section class="boundaries-section">
+      <div class="boundaries-copy">
+        <span class="eyebrow"><i></i> Transparência desde o início</span>
+        <h2>O que o aplicativo faz — e o que ele não faz.</h2>
+      </div>
+      <div class="boundaries-grid">
+        <article class="does"><strong>O Gerenciador PRO faz</strong><ul><li>Organiza parâmetros e sessões</li><li>Registra e calcula resultados</li><li>Apresenta métricas e gráficos</li><li>Ajuda no acompanhamento de limites definidos pelo usuário</li></ul></article>
+        <article class="does-not"><strong>O Gerenciador PRO não faz</strong><ul><li>Não executa operações em corretoras</li><li>Não fornece sinais de entrada</li><li>Não prevê movimentos do mercado</li><li>Não promete ou garante resultado financeiro</li></ul></article>
+      </div>
+    </section>
+
+    <section class="steps-section" id="participacao">
+      <div class="section-heading">
+        <span class="eyebrow"><i></i> Participe do pré-lançamento</span>
+        <h2>Escolha como deseja acompanhar o projeto</h2>
       </div>
       <div class="steps-grid">
-        <article>
-          <span>1</span>
-          <h3>Escolha seu interesse</h3>
-          <p>Informe se deseja conhecer a plataforma ou participar como revendedor.</p>
-        </article>
-        <article>
-          <span>2</span>
-          <h3>Preencha seus dados</h3>
-          <p>Compartilhe apenas as informações necessárias para recebermos seu interesse.</p>
-        </article>
-        <article>
-          <span>3</span>
-          <h3>Receba as novidades</h3>
-          <p>Entraremos em contato quando houver informações importantes sobre o lançamento.</p>
-        </article>
+        <article><span>1</span><h3>Futuro usuário</h3><p>Entre na lista para receber novidades e informações quando o acesso estiver disponível.</p></article>
+        <article><span>2</span><h3>Revendedor ou parceiro</h3><p>Demonstre interesse no futuro programa de indicação e comercialização.</p></article>
+        <article><span>3</span><h3>Sem compromisso</h3><p>O cadastro é gratuito e não gera cobrança nem obrigação de compra.</p></article>
       </div>
     </section>
 
@@ -104,9 +270,7 @@
       <div class="form-intro">
         <span class="eyebrow"><i></i> Lista de interessados</span>
         <h2>Como você deseja participar?</h2>
-        <p>
-          Selecione uma opção e complete o cadastro. A inscrição não gera cobrança nem obrigação de compra.
-        </p>
+        <p>Selecione uma opção e complete o cadastro. A inscrição não gera cobrança nem obrigação de compra.</p>
         <ul class="form-benefits">
           <li><span>✓</span> Informações do lançamento em primeira mão</li>
           <li><span>✓</span> Possibilidade de participar da fase inicial</li>
@@ -274,9 +438,7 @@
           <label class="consent-row">
             <input id="consentimento" name="consentimento" type="checkbox" value="Sim" required>
             <span>
-              Autorizo o contato por WhatsApp e/ou e-mail para receber informações relacionadas ao
-              Gerenciador PRO. Li o <a href="privacidade.html" target="_blank">Aviso de Privacidade</a>.
-              <em>*</em>
+              Autorizo o contato por WhatsApp e/ou e-mail para receber informações relacionadas ao Gerenciador PRO. Li o <a href="privacidade.html" target="_blank">Aviso de Privacidade</a>. <em>*</em>
             </span>
           </label>
           <span class="consent-error" id="consent-error"></span>
@@ -303,11 +465,8 @@
 
     <section class="disclaimer-section">
       <div>
-        <strong>Transparência em primeiro lugar</strong>
-        <p>
-          O Gerenciador PRO é uma ferramenta de finalidade educacional e organizacional.
-          Não oferecemos promessa, garantia ou previsão de lucro ou resultado financeiro.
-        </p>
+        <strong>Uso responsável</strong>
+        <p>O Gerenciador PRO é uma ferramenta de finalidade educacional e organizacional. O uso de qualquer estratégia de gerenciamento envolve risco. O aplicativo não oferece recomendação de investimento, promessa, garantia ou previsão de lucro.</p>
       </div>
     </section>
   </main>
@@ -315,11 +474,12 @@
   <footer>
     <div class="brand footer-brand">
       <span class="brand-mark" aria-hidden="true">GP</span>
-      <span class="brand-copy"><strong>Gerenciador PRO</strong><small>Plataforma educacional</small></span>
+      <span class="brand-copy"><strong>Gerenciador PRO</strong><small>Organização, análise e disciplina</small></span>
     </div>
     <div class="footer-links">
+      <a href="#recursos">Recursos</a>
       <a href="privacidade.html">Privacidade</a>
-      <span>© <span id="current-year"></span> Gerenciador PRO</span>
+      <span>© <b id="current-year"></b> Gerenciador PRO</span>
     </div>
   </footer>
 </body>
