@@ -1,0 +1,128 @@
+name: Teste de cadastros sequenciais
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/teste-sequencial-navegador.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sequencial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE: https://raphafernandes83.github.io/gerenciador-pro-v2/
+      ENDPOINT: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - name: Instalar navegador
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.54.2 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null
+
+      - name: Enviar 5 cadastros seguidos no mesmo navegador
+        shell: bash
+        run: |
+          cat > teste.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const site = process.env.SITE;
+          const endpoint = process.env.ENDPOINT;
+          const unique = `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${Date.now()}`;
+
+          async function total(label) {
+            const response = await fetch(`${endpoint}?sequencial=${label}-${Date.now()}`, { redirect: 'follow', cache: 'no-store' });
+            const text = await response.text();
+            if (!response.ok) throw new Error(`GET ${label}: HTTP ${response.status}: ${text}`);
+            return JSON.parse(text).totalCadastros;
+          }
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          const logs = [];
+          page.on('console', m => logs.push(`[console:${m.type()}] ${m.text()}`));
+          page.on('pageerror', e => logs.push(`[pageerror] ${e.stack || e.message}`));
+          page.on('requestfailed', r => logs.push(`[requestfailed] ${r.method()} ${r.url()} ${r.failure()?.errorText || ''}`));
+
+          const results = [];
+          let previousTotal = await total('before');
+
+          try {
+            await page.goto(`${site}?teste_sequencial=${Date.now()}#cadastro`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForSelector('#lead-form', { state: 'visible', timeout: 30000 });
+
+            for (let i = 1; i <= 5; i++) {
+              const suffix = String(i).padStart(2, '0');
+              const email = `sequencial-${unique}-${suffix}@example.com`;
+              const phone = `2197${String(process.env.GITHUB_RUN_ID).slice(-5).padStart(5, '0')}${suffix}`;
+              const started = Date.now();
+
+              await page.locator('#nome').fill(`TESTE SEQUENCIAL ${suffix} — PODE APAGAR`);
+              await page.locator('#whatsapp').fill(phone);
+              await page.locator('#email').fill(email);
+              await page.locator('#pais').selectOption({ label: 'Brasil' });
+              await page.locator('#cidade_estado').fill('Rio de Janeiro — RJ');
+              await page.locator('#observacao').fill(`Teste sequencial ${suffix}, enviado em ${new Date().toISOString()}`);
+              await page.locator('#consentimento').check();
+              await page.locator('#submit-button').click();
+
+              await page.locator('#success-state').waitFor({ state: 'visible', timeout: 60000 });
+              const successText = await page.locator('#success-message').innerText();
+
+              let currentTotal = previousTotal;
+              for (let attempt = 0; attempt < 15; attempt++) {
+                await page.waitForTimeout(1000);
+                currentTotal = await total(`after-${i}-${attempt}`);
+                if (currentTotal >= previousTotal + 1) break;
+              }
+
+              if (currentTotal < previousTotal + 1) {
+                throw new Error(`Cadastro ${i} mostrou sucesso, mas a contagem não aumentou. Antes=${previousTotal}, depois=${currentTotal}`);
+              }
+
+              results.push({
+                index: i,
+                email,
+                phone,
+                successText,
+                elapsedMs: Date.now() - started,
+                totalBefore: previousTotal,
+                totalAfter: currentTotal
+              });
+
+              previousTotal = currentTotal;
+
+              if (i < 5) {
+                await page.locator('#new-registration').click();
+                await page.locator('#lead-form').waitFor({ state: 'visible', timeout: 10000 });
+                if (await page.locator('#success-state').isVisible()) {
+                  throw new Error(`Após clicar em Fazer outro cadastro, o estado de sucesso continuou visível no teste ${i}`);
+                }
+              }
+            }
+
+            await page.screenshot({ path: 'resultado-sequencial.png', fullPage: true });
+            fs.writeFileSync('resultado-sequencial.json', JSON.stringify({ ok: true, results }, null, 2));
+            console.log(JSON.stringify({ ok: true, results }, null, 2));
+          } finally {
+            fs.writeFileSync('console-sequencial.log', logs.join('\n'));
+            await browser.close();
+          }
+          EOF
+          node teste.mjs | tee saida-sequencial.log
+
+      - name: Guardar evidências
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: teste-sequencial-${{ github.run_id }}
+          path: |
+            resultado-sequencial.json
+            resultado-sequencial.png
+            console-sequencial.log
+            saida-sequencial.log
+          if-no-files-found: warn
