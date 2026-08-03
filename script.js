@@ -12,6 +12,9 @@
   const successState = document.getElementById("success-state");
   const observation = document.getElementById("observacao");
   const counter = document.getElementById("counter");
+  const interestTabs = document.querySelector(".interest-tabs");
+  const successMessage = document.getElementById("success-message");
+  const newRegistrationButton = document.getElementById("new-registration");
   const params = new URLSearchParams(window.location.search);
 
   const hiddenValues = {
@@ -29,35 +32,6 @@
       if (element) element.value = value;
     });
   }
-
-  restoreHiddenValues();
-  document.getElementById("current-year").textContent = new Date().getFullYear();
-
-  function setInterest(value) {
-    interestInput.value = value;
-    const isReseller = value === "revender";
-
-    buyerFields.classList.toggle("hidden", isReseller);
-    resellerFields.classList.toggle("hidden", !isReseller);
-    resellerFields.setAttribute("aria-hidden", String(!isReseller));
-    channelInput.required = isReseller;
-
-    tabs.forEach((tab) => {
-      const active = tab.dataset.interest === value;
-      tab.classList.toggle("active", active);
-      tab.setAttribute("aria-checked", String(active));
-    });
-
-    clearErrors();
-  }
-
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => setInterest(tab.dataset.interest));
-  });
-
-  observation.addEventListener("input", () => {
-    counter.textContent = observation.value.length;
-  });
 
   function showNotice(message, type = "error") {
     notice.hidden = false;
@@ -78,6 +52,37 @@
     });
 
     document.getElementById("consent-error").textContent = "";
+  }
+
+  function setInterest(value) {
+    interestInput.value = value;
+    const isReseller = value === "revender";
+
+    buyerFields.classList.toggle("hidden", isReseller);
+    resellerFields.classList.toggle("hidden", !isReseller);
+    resellerFields.setAttribute("aria-hidden", String(!isReseller));
+    channelInput.required = isReseller;
+
+    tabs.forEach((tab) => {
+      const active = tab.dataset.interest === value;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-checked", String(active));
+    });
+
+    clearErrors();
+  }
+
+  function resetRegistrationForm() {
+    form.reset();
+    restoreHiddenValues();
+    setInterest("comprar");
+    observation.dispatchEvent(new Event("input"));
+    successState.hidden = true;
+    interestTabs.hidden = false;
+    form.hidden = false;
+    submitButton.disabled = false;
+    submitButton.classList.remove("loading");
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function validateForm() {
@@ -140,11 +145,8 @@
 
   /**
    * Envia o formulário para o Apps Script em um iframe oculto.
-   *
-   * O HTML Service do Google pode colocar a resposta em um iframe interno.
-   * Por isso aceitamos duas confirmações:
-   * 1. postMessage do backend, quando ele chegar ao site;
-   * 2. carregamento completo da resposta do /exec, que só ocorre depois do doPost.
+   * A página só considera sucesso quando recebe o postMessage real do backend.
+   * O simples carregamento do iframe nunca mais é tratado como confirmação.
    */
   function submitThroughConfirmedIframe() {
     return new Promise((resolve, reject) => {
@@ -152,8 +154,8 @@
       const submissionId = createSubmissionId();
       const frameName = `gp-lead-frame-${submissionId}`;
       const timeoutMs = Math.max(
-        30000,
-        Number(window.GP_FORM_CONFIG.requestTimeoutMs || 15000) + 15000
+        45000,
+        Number(window.GP_FORM_CONFIG.requestTimeoutMs || 15000) + 30000
       );
 
       const iframe = document.createElement("iframe");
@@ -183,13 +185,11 @@
 
       let completed = false;
       let submitted = false;
-      let fallbackTimer = null;
 
       const cleanup = () => {
         window.removeEventListener("message", onMessage);
         iframe.removeEventListener("load", onFrameLoad);
         window.clearTimeout(timeoutTimer);
-        window.clearTimeout(fallbackTimer);
         relayForm.remove();
         window.setTimeout(() => iframe.remove(), 250);
       };
@@ -215,30 +215,17 @@
       };
 
       const onFrameLoad = () => {
-        if (!submitted) {
-          submitted = true;
-          document.body.appendChild(relayForm);
-          relayForm.submit();
-          return;
-        }
-
-        fallbackTimer = window.setTimeout(() => {
-          finish(() =>
-            resolve({
-              ok: true,
-              duplicate: false,
-              submissionId,
-              confirmation: "apps-script-response-loaded"
-            })
-          );
-        }, 1200);
+        if (submitted) return;
+        submitted = true;
+        document.body.appendChild(relayForm);
+        relayForm.submit();
       };
 
       const timeoutTimer = window.setTimeout(() => {
         finish(() =>
           reject(
             new Error(
-              "Não foi possível concluir o envio. Atualize a página e tente novamente."
+              "A planilha não confirmou a gravação. Aguarde alguns segundos e tente novamente."
             )
           )
         );
@@ -250,6 +237,14 @@
     });
   }
 
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => setInterest(tab.dataset.interest));
+  });
+
+  observation.addEventListener("input", () => {
+    counter.textContent = observation.value.length;
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!validateForm()) return;
@@ -259,6 +254,7 @@
       return;
     }
 
+    const submittedInterest = interestInput.value;
     submitButton.disabled = true;
     submitButton.classList.add("loading");
 
@@ -266,20 +262,18 @@
       const result = await submitThroughConfirmedIframe();
 
       form.hidden = true;
-      document.querySelector(".interest-tabs").hidden = true;
+      interestTabs.hidden = true;
       successState.hidden = false;
-
-      const successMessage = document.getElementById("success-message");
 
       if (result.duplicate) {
         successMessage.textContent =
           "Este contato já estava cadastrado. Seu interesse continua registrado em nossa lista.";
-      } else if (interestInput.value === "revender") {
+      } else if (submittedInterest === "revender") {
         successMessage.textContent =
-          "Seu interesse como parceiro foi registrado. Entraremos em contato quando o programa de revendedores estiver disponível.";
+          "Seu interesse como parceiro foi gravado. Entraremos em contato quando o programa de revendedores estiver disponível.";
       } else {
         successMessage.textContent =
-          "Seu cadastro foi gravado. Avisaremos você quando houver novidades importantes sobre o lançamento do Gerenciador PRO.";
+          "Seu cadastro foi gravado e confirmado pela planilha. Avisaremos você quando houver novidades importantes.";
       }
 
       successState.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -294,16 +288,7 @@
     }
   });
 
-  document.getElementById("new-registration").addEventListener("click", () => {
-    form.reset();
-    restoreHiddenValues();
-    setInterest("comprar");
-    observation.dispatchEvent(new Event("input"));
-    successState.hidden = true;
-    document.querySelector(".interest-tabs").hidden = false;
-    form.hidden = false;
-    form.scrollIntoView({ behavior: "smooth" });
-  });
+  newRegistrationButton.addEventListener("click", resetRegistrationForm);
 
   document.getElementById("whatsapp").addEventListener("input", (event) => {
     if (event.target.value.trim().startsWith("+")) return;
@@ -318,4 +303,7 @@
       event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
   });
+
+  restoreHiddenValues();
+  document.getElementById("current-year").textContent = new Date().getFullYear();
 })();
