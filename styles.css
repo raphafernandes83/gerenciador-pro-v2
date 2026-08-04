@@ -919,6 +919,20 @@ section { scroll-margin-top: 30px; }
 .showcase-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .showcase-status b { font-size: .6rem; color: #bdffdc; }
 
+.cta-strip {
+  padding: 34px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+}
+.cta-strip-copy { display: flex; flex-direction: column; gap: 4px; }
+.cta-strip-copy strong { font-size: .92rem; }
+.cta-strip-copy span { color: var(--muted); font-size: .74rem; }
+.cta-strip .button { flex: 0 0 auto; }
+
 .intelligence-grid {
   display: grid;
   grid-template-columns: repeat(3,1fr);
@@ -1377,6 +1391,10 @@ input:focus, select:focus, textarea:focus {
   width: 100%;
   min-height: 54px;
   margin-top: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   border: 0;
   border-radius: 12px;
   cursor: pointer;
@@ -1388,16 +1406,15 @@ input:focus, select:focus, textarea:focus {
 .submit-button:disabled { opacity: .65; cursor: wait; }
 .button-loader {
   display: none;
-  width: 19px;
-  height: 19px;
-  margin: auto;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
   border: 2px solid rgba(0,0,0,.25);
   border-top-color: #111;
   border-radius: 50%;
   animation: spin .75s linear infinite;
 }
-.submit-button.loading .button-label { display: none; }
-.submit-button.loading .button-loader { display: block; }
+.submit-button.loading .button-loader { display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .security-note { margin: 14px 0 0; text-align: center; color: #657181; font-size: .59rem; }
 .form-notice {
@@ -1425,6 +1442,8 @@ input:focus, select:focus, textarea:focus {
 }
 .success-state h2 { margin: 13px 0; font-size: 2rem; letter-spacing: -.045em; }
 .success-state p { max-width: 470px; margin: 0 auto 26px; color: var(--muted); font-size: .78rem; line-height: 1.7; }
+.success-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.success-actions .button { min-width: 190px; }
 
 .final-disclaimer { padding: 0 0 108px; }
 .final-disclaimer > div {
@@ -1481,6 +1500,7 @@ footer {
   .intel-card.wide { grid-column: span 2; }
   .global-panel { grid-template-columns: 1fr; }
   .form-section { grid-template-columns: 1fr; gap: 45px; }
+  .form-shell { order: -1; }
   .form-intro { max-width: 760px; margin: auto; text-align: center; }
   .form-assurances { max-width: 650px; margin-inline: auto; text-align: left; }
   .form-company-note { justify-content: center; }
@@ -1552,6 +1572,8 @@ footer {
   .global-panel h2 { font-size: 2.15rem; }
   .form-shell { border-radius: 21px; }
   .secure-badge { font-size: .5rem; }
+  .cta-strip { flex-direction: column; align-items: flex-start; }
+  .success-actions { flex-direction: column; }
   .final-disclaimer > div { grid-template-columns: 1fr; text-align: center; }
   .disclaimer-icon { margin: auto; }
   .footer-center { flex-direction: column; gap: 4px; }

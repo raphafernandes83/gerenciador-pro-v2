@@ -384,6 +384,14 @@
       </div>
     </section>
 
+    <section class="cta-strip">
+      <div class="cta-strip-copy">
+        <strong>Ainda não decidiu?</strong>
+        <span>Cadastro gratuito, sem cobrança nesta etapa — leva menos de 2 minutos.</span>
+      </div>
+      <a class="button button-secondary" href="#cadastro">Quero entrar na lista <span>→</span></a>
+    </section>
+
     <section class="intelligence-section" id="inteligencia">
       <div class="section-heading left">
         <span class="eyebrow"><i></i> Depois da execução vem a inteligência</span>
@@ -761,7 +769,9 @@
                 </div>
                 <div class="field">
                   <label for="link_canal">Link do perfil, grupo ou canal</label>
-                  <input id="link_canal" name="link_canal" type="url" inputmode="url" placeholder="https://...">
+                  <input id="link_canal" name="link_canal" type="url" inputmode="url" placeholder="instagram.com/seu-canal" aria-describedby="link_canal-hint link_canal-error">
+                  <span class="field-hint" id="link_canal-hint">Cole o link do Instagram, YouTube, TikTok, canal do WhatsApp ou site.</span>
+                  <span class="field-error" id="link_canal-error" aria-live="polite"></span>
                 </div>
               </div>
 
@@ -814,7 +824,10 @@
           <span class="mini-label">CADASTRO CONFIRMADO</span>
           <h2 id="success-title">Cadastro confirmado</h2>
           <p id="success-message">Avisaremos você quando houver novidades importantes sobre o Gerenciador PRO.</p>
-          <button class="button button-secondary" id="new-registration" type="button">Fazer outro cadastro</button>
+          <div class="success-actions">
+            <a class="button button-secondary" href="#inicio">Voltar ao início</a>
+            <button class="button button-secondary" id="new-registration" type="button">Fazer outro cadastro</button>
+          </div>
         </div>
       </div>
     </section>
