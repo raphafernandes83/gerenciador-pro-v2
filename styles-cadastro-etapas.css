@@ -74,4 +74,5 @@
   html { scroll-behavior: auto; }
   .launch-pulse { animation: none; }
   .button-loader { animation: none; opacity: .85; }
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
 }

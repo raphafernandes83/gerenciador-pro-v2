@@ -279,6 +279,38 @@
     return true;
   }
 
+  // Confirmação sonora discreta, só no sucesso real do cadastro — nunca em
+  // cliques ou navegação de etapa. Falha em silêncio se o navegador bloquear
+  // ou não suportar Web Audio; som é um detalhe, nunca deve travar o fluxo.
+  function playSuccessChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      [660, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const start = now + i * 0.11;
+
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.07, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.34);
+      });
+
+      window.setTimeout(() => ctx.close(), 700);
+    } catch (error) {
+      // som é só um detalhe de acabamento — segue o fluxo normalmente
+    }
+  }
+
   function isConfigured() {
     const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
     return endpoint.startsWith("https://script.google.com/") && endpoint.endsWith("/exec");
@@ -471,6 +503,7 @@
       if (stepIndicator) stepIndicator.hidden = true;
       if (stepStatus) stepStatus.hidden = true;
       successState.hidden = false;
+      playSuccessChime();
 
       if (result.duplicate) {
         if (successTitle) successTitle.textContent = "Você já estava na lista";
