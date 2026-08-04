@@ -1,4 +1,4 @@
-name: Publicar site no GitHub Pages
+name: Aplicar correção do CSS e publicar
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  correct-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -23,14 +23,52 @@ jobs:
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Aplicar somente as duas alterações auditadas
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index_path = Path("index.html")
+          index = index_path.read_text(encoding="utf-8")
+          old = '''  <link rel="stylesheet" href="styles.css?v=20260804-1">
+  <script defer src="config.js?v=20260803-2"></script>'''
+          new = '''  <link rel="stylesheet" href="styles.css?v=20260804-1">
+  <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
+  <script defer src="config.js?v=20260804-2"></script>'''
+
+          if index.count(old) != 1:
+              raise SystemExit("O bloco esperado do head não foi encontrado exatamente uma vez; operação cancelada.")
+
+          index_path.write_text(index.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+          config = 'window.GP_FORM_CONFIG={endpoint:"https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec",requestTimeoutMs:15000};\n'
+          Path("config.js").write_text(config, encoding="utf-8", newline="\n")
+          PY
+
+          git show HEAD^:.github/workflows/pages.yml > .github/workflows/pages.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html config.js .github/workflows/pages.yml
+          git diff --cached --check
+          git diff --cached --exit-code -- script.js styles.css styles-cadastro-etapas.css privacidade.html
+          git commit -m "fix(site): load cadastro CSS directly from head"
+          git push origin HEAD:main
+
       - name: Configurar Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Preparar arquivos
+
+      - name: Preparar arquivos corrigidos
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
       - name: Publicar
         id: deployment
         uses: actions/deploy-pages@v4
