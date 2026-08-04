@@ -8,13 +8,24 @@
   <meta property="og:title" content="Gerenciador PRO — O próximo nível do gerenciamento operacional">
   <meta property="og:description" content="Planilhas registram. O Gerenciador PRO calcula, orienta, protege e analisa cada etapa da sessão.">
   <meta property="og:type" content="website">
+  <meta property="og:image" content="https://raphafernandes83.github.io/gerenciador-pro-v2/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="pt_BR">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Gerenciador PRO — O próximo nível do gerenciamento operacional">
+  <meta name="twitter:description" content="Planilhas registram. O Gerenciador PRO calcula, orienta, protege e analisa cada etapa da sessão.">
+  <meta name="twitter:image" content="https://raphafernandes83.github.io/gerenciador-pro-v2/og-image.png">
   <title>Gerenciador PRO — O próximo nível do gerenciamento operacional</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIxMCUiIHkxPSIwJSIgeDI9IjkwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZmY3YTFhIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI2ZmOWU0ZCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTgiIGZpbGw9InVybCgjZykiLz4KICA8dGV4dCB4PSIzMiIgeT0iNDEiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iOTAwIiBmb250LXNpemU9IjI1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMTMxMzEzIj5HUDwvdGV4dD4KPC9zdmc+Cg==">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20260804-1">
+  <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
   <script defer src="config.js?v=20260803-2"></script>
   <script defer src="script.js?v=20260804-2"></script>
+  <script defer src="site.js?v=20260804-1"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -382,6 +393,14 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="cta-strip">
+      <div class="cta-strip-copy">
+        <strong>Ainda não decidiu?</strong>
+        <span>Cadastro gratuito, sem cobrança nesta etapa — leva menos de 2 minutos.</span>
+      </div>
+      <a class="button button-secondary" href="#cadastro">Quero entrar na lista <span>→</span></a>
     </section>
 
     <section class="intelligence-section" id="inteligencia">
@@ -761,7 +780,9 @@
                 </div>
                 <div class="field">
                   <label for="link_canal">Link do perfil, grupo ou canal</label>
-                  <input id="link_canal" name="link_canal" type="url" inputmode="url" placeholder="https://...">
+                  <input id="link_canal" name="link_canal" type="url" inputmode="url" placeholder="instagram.com/seu-canal" aria-describedby="link_canal-hint link_canal-error">
+                  <span class="field-hint" id="link_canal-hint">Cole o link do Instagram, YouTube, TikTok, canal do WhatsApp ou site.</span>
+                  <span class="field-error" id="link_canal-error" aria-live="polite"></span>
                 </div>
               </div>
 
@@ -814,7 +835,10 @@
           <span class="mini-label">CADASTRO CONFIRMADO</span>
           <h2 id="success-title">Cadastro confirmado</h2>
           <p id="success-message">Avisaremos você quando houver novidades importantes sobre o Gerenciador PRO.</p>
-          <button class="button button-secondary" id="new-registration" type="button">Fazer outro cadastro</button>
+          <div class="success-actions">
+            <a class="button button-secondary" href="#inicio">Voltar ao início</a>
+            <button class="button button-secondary" id="new-registration" type="button">Fazer outro cadastro</button>
+          </div>
         </div>
       </div>
     </section>

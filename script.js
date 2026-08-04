@@ -8,6 +8,8 @@
   const resellerFields = document.getElementById("reseller-fields");
   const channelInput = document.getElementById("canal_divulgacao");
   const submitButton = document.getElementById("submit-button");
+  const submitButtonLabel = submitButton.querySelector(".button-label");
+  const submitButtonIdleText = submitButtonLabel.textContent;
   const notice = document.getElementById("form-notice");
   const successState = document.getElementById("success-state");
   const observation = document.getElementById("observacao");
@@ -186,6 +188,26 @@
     return "";
   }
 
+  // Link do canal também é opcional. Aceita qualquer rede (Instagram, YouTube,
+  // TikTok, Facebook, Telegram, WhatsApp, site) sem exigir que o usuário
+  // digite "https://" — o prefixo é completado automaticamente.
+  function normalizeLinkValue(value) {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  }
+
+  function validateOptionalLink(element) {
+    const value = element.value.trim();
+    if (!value) return "";
+    const normalized = normalizeLinkValue(value);
+    if (!/^https?:\/\/[^\s]+\.[^\s]{2,}$/i.test(normalized)) {
+      return "Cole o link completo do perfil, grupo ou canal (ex.: instagram.com/seu-canal).";
+    }
+    return "";
+  }
+
   function applyFieldError(element, message) {
     if (!message) return false;
 
@@ -223,6 +245,12 @@
       if (applyFieldError(emailElement, message)) invalid.push(emailElement);
     }
 
+    const linkElement = scopeEl.querySelector("#link_canal");
+    if (linkElement && !linkElement.closest(".hidden")) {
+      const message = validateOptionalLink(linkElement);
+      if (applyFieldError(linkElement, message)) invalid.push(linkElement);
+    }
+
     return invalid;
   }
 
@@ -249,6 +277,38 @@
     }
 
     return true;
+  }
+
+  // Confirmação sonora discreta, só no sucesso real do cadastro — nunca em
+  // cliques ou navegação de etapa. Falha em silêncio se o navegador bloquear
+  // ou não suportar Web Audio; som é um detalhe, nunca deve travar o fluxo.
+  function playSuccessChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      [660, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const start = now + i * 0.11;
+
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.07, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.34);
+      });
+
+      window.setTimeout(() => ctx.close(), 700);
+    } catch (error) {
+      // som é só um detalhe de acabamento — segue o fluxo normalmente
+    }
   }
 
   function isConfigured() {
@@ -432,6 +492,8 @@
     const submittedInterest = interestInput.value;
     submitButton.disabled = true;
     submitButton.classList.add("loading");
+    submitButton.setAttribute("aria-busy", "true");
+    submitButtonLabel.textContent = "Enviando cadastro…";
 
     try {
       const result = await submitThroughConfirmedIframe();
@@ -441,6 +503,7 @@
       if (stepIndicator) stepIndicator.hidden = true;
       if (stepStatus) stepStatus.hidden = true;
       successState.hidden = false;
+      playSuccessChime();
 
       if (result.duplicate) {
         if (successTitle) successTitle.textContent = "Você já estava na lista";
@@ -465,23 +528,45 @@
     } finally {
       submitButton.disabled = false;
       submitButton.classList.remove("loading");
+      submitButton.removeAttribute("aria-busy");
+      submitButtonLabel.textContent = submitButtonIdleText;
     }
   });
 
   newRegistrationButton.addEventListener("click", resetRegistrationForm);
+
+  // DDDs brasileiros válidos (ANATEL). Só aplicamos a máscara "(XX) XXXXX-XXXX"
+  // quando os dois primeiros dígitos batem com um DDD real — assim um número
+  // estrangeiro digitado sem "+" não é forçado num formato brasileiro errado.
+  const VALID_BR_DDD = new Set([
+    11, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 24, 27, 28,
+    31, 32, 33, 34, 35, 37, 38,
+    41, 42, 43, 44, 45, 46, 47, 48, 49,
+    51, 53, 54, 55,
+    61, 62, 63, 64, 65, 66, 67, 68, 69,
+    71, 73, 74, 75, 77, 79,
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    91, 92, 93, 94, 95, 96, 97, 98, 99
+  ]);
 
   document.getElementById("whatsapp").addEventListener("input", (event) => {
     if (event.target.value.trim().startsWith("+")) return;
 
     const digits = event.target.value.replace(/\D/g, "").slice(0, 11);
 
-    if (digits.length <= 2) {
+    if (digits.length < 2 || !VALID_BR_DDD.has(Number(digits.slice(0, 2)))) {
       event.target.value = digits;
     } else if (digits.length <= 7) {
       event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
     } else {
       event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
+  });
+
+  document.getElementById("link_canal").addEventListener("blur", (event) => {
+    if (!event.target.value.trim()) return;
+    event.target.value = normalizeLinkValue(event.target.value);
   });
 
   restoreHiddenValues();
