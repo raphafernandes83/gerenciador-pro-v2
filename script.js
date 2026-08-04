@@ -13,10 +13,59 @@
   const observation = document.getElementById("observacao");
   const counter = document.getElementById("counter");
   const interestTabs = document.querySelector(".interest-tabs");
+  const successTitle = document.getElementById("success-title");
   const successMessage = document.getElementById("success-message");
   const newRegistrationButton = document.getElementById("new-registration");
   const params = new URLSearchParams(window.location.search);
 
+  // --- Navegação em etapas (novo) --------------------------------------
+  // Paginação usa o atributo nativo `hidden`, nunca a classe `.hidden`.
+  // A classe `.hidden` continua reservada exclusivamente para a exibição
+  // condicional por perfil (comprador/revendedor), exatamente como antes.
+  // Isso garante que collectInvalidFields()/validateForm() — que ignoram
+  // apenas o que estiver dentro de `.hidden` — nunca deixem de validar um
+  // campo obrigatório só porque a etapa dele está fechada no momento.
+  const steps = [...document.querySelectorAll(".form-step")];
+  const stepDots = [...document.querySelectorAll(".step-dot")];
+  const stepStatus = document.getElementById("step-status");
+  const stepIndicator = document.getElementById("step-indicator");
+  const stepLabels = { 1: "Perfil", 2: "Essenciais", 3: "Complementares" };
+  let currentStep = 1;
+
+  function prefersReducedMotion() {
+    return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  function scrollBehavior() {
+    return prefersReducedMotion() ? "auto" : "smooth";
+  }
+
+  function goToStep(stepNumber, options = {}) {
+    const { focusStatus = true, scroll = true } = options;
+    currentStep = stepNumber;
+
+    steps.forEach((stepEl) => {
+      stepEl.hidden = Number(stepEl.dataset.step) !== stepNumber;
+    });
+
+    stepDots.forEach((dot) => {
+      const dotStep = Number(dot.dataset.stepDot);
+      dot.classList.toggle("active", dotStep === stepNumber);
+      dot.classList.toggle("done", dotStep < stepNumber);
+    });
+
+    if (stepStatus) {
+      stepStatus.textContent = `Etapa ${stepNumber} de 3 — ${stepLabels[stepNumber]}`;
+      if (focusStatus) stepStatus.focus({ preventScroll: true });
+    }
+
+    if (scroll) {
+      const shell = document.querySelector(".form-shell");
+      shell?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+    }
+  }
+
+  // --- Valores ocultos (UTM, origem, submission context) ----------------
   const hiddenValues = {
     origem: params.get("origem") || params.get("source") || "acesso-direto",
     utm_source: params.get("utm_source") || "",
@@ -54,13 +103,35 @@
     document.getElementById("consent-error").textContent = "";
   }
 
+  function clearStepErrors(scopeEl) {
+    scopeEl.querySelectorAll(".field.invalid").forEach((element) => {
+      element.classList.remove("invalid");
+    });
+    scopeEl.querySelectorAll(".field-error").forEach((element) => {
+      element.textContent = "";
+    });
+    const consentError = scopeEl.querySelector("#consent-error");
+    if (consentError) consentError.textContent = "";
+  }
+
   function setInterest(value) {
     interestInput.value = value;
     const isReseller = value === "revender";
 
-    buyerFields.classList.toggle("hidden", isReseller);
-    resellerFields.classList.toggle("hidden", !isReseller);
-    resellerFields.setAttribute("aria-hidden", String(!isReseller));
+    document.querySelectorAll(".profile-buyer-only").forEach((element) => {
+      element.classList.toggle("hidden", isReseller);
+      if (element.hasAttribute("aria-hidden") || element.classList.contains("conditional-fields")) {
+        element.setAttribute("aria-hidden", String(isReseller));
+      }
+    });
+
+    document.querySelectorAll(".profile-reseller-only").forEach((element) => {
+      element.classList.toggle("hidden", !isReseller);
+      if (element.hasAttribute("aria-hidden") || element.classList.contains("conditional-fields")) {
+        element.setAttribute("aria-hidden", String(!isReseller));
+      }
+    });
+
     channelInput.required = isReseller;
 
     tabs.forEach((tab) => {
@@ -76,61 +147,108 @@
     form.reset();
     restoreHiddenValues();
     setInterest("comprar");
+    goToStep(1, { focusStatus: false, scroll: false });
     observation.dispatchEvent(new Event("input"));
     successState.hidden = true;
     interestTabs.hidden = false;
+    if (stepIndicator) stepIndicator.hidden = false;
+    if (stepStatus) stepStatus.hidden = false;
     form.hidden = false;
     submitButton.disabled = false;
     submitButton.classList.remove("loading");
-    form.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.querySelector(".form-shell")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   }
 
-  function validateForm() {
-    clearErrors();
-    let valid = true;
+  // --- Validação --------------------------------------------------------
+  // As regras de obrigatoriedade e formato são as mesmas de antes; o que
+  // muda é que agora podem ser aplicadas tanto ao formulário inteiro
+  // (submit final) quanto a uma única etapa (botão "Continuar").
+  function validateRequiredField(element) {
+    const value = element.type === "checkbox" ? element.checked : element.value.trim();
 
-    [...form.querySelectorAll("[required]")]
-      .filter((element) => !element.closest(".hidden"))
-      .forEach((element) => {
-        let message = "";
-        const value = element.type === "checkbox" ? element.checked : element.value.trim();
+    if (!value) return "Este campo é obrigatório.";
+    if (element.id === "nome" && element.value.trim().length < 3) {
+      return "Informe seu nome completo.";
+    }
+    if (element.id === "whatsapp" && element.value.replace(/\D/g, "").length < 10) {
+      return "Informe um WhatsApp válido com DDD.";
+    }
+    return "";
+  }
 
-        if (!value) {
-          message = "Este campo é obrigatório.";
-        } else if (
-          element.type === "email" &&
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(element.value)
-        ) {
-          message = "Informe um e-mail válido.";
-        } else if (element.id === "nome" && element.value.trim().length < 3) {
-          message = "Informe seu nome completo.";
-        } else if (
-          element.id === "whatsapp" &&
-          element.value.replace(/\D/g, "").length < 10
-        ) {
-          message = "Informe um WhatsApp válido com DDD.";
-        }
+  // E-mail agora é opcional: só é validado (formato) quando preenchido.
+  function validateOptionalEmail(element) {
+    const value = element.value.trim();
+    if (!value) return "";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      return "Informe um e-mail válido ou deixe o campo em branco.";
+    }
+    return "";
+  }
 
-        if (!message) return;
-        valid = false;
+  function applyFieldError(element, message) {
+    if (!message) return false;
 
-        if (element.type === "checkbox") {
-          document.getElementById("consent-error").textContent = message;
-          return;
-        }
-
-        const field = element.closest(".field");
-        field?.classList.add("invalid");
-        const error = field?.querySelector(".field-error");
-        if (error) error.textContent = message;
-      });
-
-    if (form.elements.website.value) {
-      valid = false;
-      showNotice("Não foi possível enviar o cadastro.");
+    if (element.type === "checkbox") {
+      const consentError = document.getElementById("consent-error");
+      if (consentError) consentError.textContent = message;
+      return true;
     }
 
-    return valid;
+    const field = element.closest(".field");
+    field?.classList.add("invalid");
+    const error = field?.querySelector(".field-error");
+    if (error) error.textContent = message;
+    return true;
+  }
+
+  // Percorre [required] dentro do escopo informado (uma etapa ou o form
+  // inteiro), pulando o que estiver dentro de `.hidden` (campo não
+  // aplicável ao perfil escolhido) — igual à lógica original. Como a
+  // paginação usa `hidden` (atributo) e não `.hidden` (classe), uma etapa
+  // fechada nunca faz um campo obrigatório ser ignorado aqui.
+  function collectInvalidFields(scopeEl) {
+    const invalid = [];
+
+    [...scopeEl.querySelectorAll("[required]")]
+      .filter((element) => !element.closest(".hidden"))
+      .forEach((element) => {
+        const message = validateRequiredField(element);
+        if (applyFieldError(element, message)) invalid.push(element);
+      });
+
+    const emailElement = scopeEl.querySelector("#email");
+    if (emailElement && !emailElement.closest(".hidden")) {
+      const message = validateOptionalEmail(emailElement);
+      if (applyFieldError(emailElement, message)) invalid.push(emailElement);
+    }
+
+    return invalid;
+  }
+
+  function focusFirstInvalid(invalidFields) {
+    const target = invalidFields[0];
+    if (!target) return;
+    target.focus();
+  }
+
+  // Validação final: examina TODOS os campos aplicáveis ao perfil,
+  // independentemente de qual etapa está visível no momento. Se houver
+  // erro, abre a primeira etapa inválida e move o foco para o campo.
+  function validateFormAndReveal() {
+    clearErrors();
+    const invalidFields = collectInvalidFields(form);
+
+    if (invalidFields.length > 0) {
+      const firstInvalid = invalidFields[0];
+      const stepEl = firstInvalid.closest(".form-step");
+      const stepNumber = stepEl ? Number(stepEl.dataset.step) : 2;
+      goToStep(stepNumber, { focusStatus: false });
+      focusFirstInvalid(invalidFields);
+      return false;
+    }
+
+    return true;
   }
 
   function isConfigured() {
@@ -147,6 +265,10 @@
    * Envia o formulário para o Apps Script em um iframe oculto.
    * A página só considera sucesso quando recebe o postMessage real do backend.
    * O simples carregamento do iframe nunca mais é tratado como confirmação.
+   *
+   * NÃO MODIFICADA em relação à versão original: preserva nomes de campos,
+   * UTM, origem, pagina_url, user_agent, submission_id, honeypot e a
+   * confirmação real vinda do backend via postMessage.
    */
   function submitThroughConfirmedIframe() {
     return new Promise((resolve, reject) => {
@@ -237,6 +359,8 @@
     });
   }
 
+  // --- Listeners ----------------------------------------------------------
+
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => setInterest(tab.dataset.interest));
   });
@@ -245,9 +369,60 @@
     counter.textContent = observation.value.length;
   });
 
+  // Navegação entre etapas. Ao avançar, valida somente a etapa atual
+  // (não o formulário inteiro) para não bloquear o avanço por causa de
+  // um campo de uma etapa futura (ex.: consentimento, que só existe na
+  // etapa 3, não pode impedir o avanço da etapa 1 para a 2).
+  document.querySelectorAll("[data-goto]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = Number(button.dataset.goto);
+
+      if (target > currentStep) {
+        const currentStepEl = steps.find((stepEl) => Number(stepEl.dataset.step) === currentStep);
+        if (currentStepEl) {
+          clearStepErrors(currentStepEl);
+          const invalidFields = collectInvalidFields(currentStepEl);
+          if (invalidFields.length > 0) {
+            focusFirstInvalid(invalidFields);
+            return;
+          }
+        }
+      }
+
+      goToStep(target);
+    });
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!validateForm()) return;
+
+    // Implicit submit (Enter) before the final step must behave like
+    // the current step's "Continuar" button, not jump directly to consent.
+    if (currentStep < 3) {
+      const currentStepEl = steps.find(
+        (stepEl) => Number(stepEl.dataset.step) === currentStep
+      );
+
+      if (currentStepEl) {
+        clearStepErrors(currentStepEl);
+        const invalidFields = collectInvalidFields(currentStepEl);
+        if (invalidFields.length > 0) {
+          focusFirstInvalid(invalidFields);
+          return;
+        }
+      }
+
+      goToStep(currentStep + 1);
+      return;
+    }
+
+    if (!validateFormAndReveal()) return;
+
+    if (form.elements.website.value) {
+      // Honeypot preenchido: tratado como envio malicioso, sem detalhar o motivo.
+      showNotice("Não foi possível enviar o cadastro.");
+      return;
+    }
 
     if (!isConfigured()) {
       showNotice("O armazenamento dos cadastros ainda não foi configurado.", "info");
@@ -263,20 +438,25 @@
 
       form.hidden = true;
       interestTabs.hidden = true;
+      if (stepIndicator) stepIndicator.hidden = true;
+      if (stepStatus) stepStatus.hidden = true;
       successState.hidden = false;
 
       if (result.duplicate) {
+        if (successTitle) successTitle.textContent = "Você já estava na lista";
         successMessage.textContent =
           "Este contato já estava cadastrado. Seu interesse continua registrado em nossa lista.";
       } else if (submittedInterest === "revender") {
+        if (successTitle) successTitle.textContent = "Você entrou como parceiro";
         successMessage.textContent =
           "Seu interesse como parceiro foi gravado. Entraremos em contato quando o programa de revendedores estiver disponível.";
       } else {
+        if (successTitle) successTitle.textContent = "Você entrou como futuro usuário";
         successMessage.textContent =
           "Seu cadastro foi gravado e confirmado pela planilha. Avisaremos você quando houver novidades importantes.";
       }
 
-      successState.scrollIntoView({ behavior: "smooth", block: "center" });
+      successState.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     } catch (error) {
       showNotice(
         error?.message || "Não conseguimos concluir o cadastro. Tente novamente.",
@@ -305,5 +485,6 @@
   });
 
   restoreHiddenValues();
+  goToStep(1, { focusStatus: false, scroll: false });
   document.getElementById("current-year").textContent = new Date().getFullYear();
 })();
