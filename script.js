@@ -487,4 +487,144 @@
   restoreHiddenValues();
   goToStep(1, { focusStatus: false, scroll: false });
   document.getElementById("current-year").textContent = new Date().getFullYear();
+
+  // === UI/UX MELHORIAS ================================================
+
+  // --- Hamburger menu -------------------------------------------------
+  const hamburgerBtn = document.querySelector(".hamburger-btn");
+  const mobileMenu = document.getElementById("mobile-menu");
+
+  if (hamburgerBtn && mobileMenu) {
+    hamburgerBtn.addEventListener("click", () => {
+      const isOpen = mobileMenu.classList.contains("open");
+      if (isOpen) {
+        mobileMenu.classList.remove("open");
+        hamburgerBtn.classList.remove("active");
+        hamburgerBtn.setAttribute("aria-expanded", "false");
+        document.body.style.overflow = "";
+      } else {
+        mobileMenu.hidden = false;
+        requestAnimationFrame(() => {
+          mobileMenu.classList.add("open");
+          hamburgerBtn.classList.add("active");
+          hamburgerBtn.setAttribute("aria-expanded", "true");
+          document.body.style.overflow = "hidden";
+        });
+      }
+    });
+
+    mobileMenu.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        mobileMenu.classList.remove("open");
+        hamburgerBtn.classList.remove("active");
+        hamburgerBtn.setAttribute("aria-expanded", "false");
+        document.body.style.overflow = "";
+      });
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && mobileMenu.classList.contains("open")) {
+        mobileMenu.classList.remove("open");
+        hamburgerBtn.classList.remove("active");
+        hamburgerBtn.setAttribute("aria-expanded", "false");
+        document.body.style.overflow = "";
+        hamburgerBtn.focus();
+      }
+    });
+  }
+
+  // --- Sticky header shadow -------------------------------------------
+  const siteHeader = document.querySelector(".site-header");
+  if (siteHeader) {
+    const launchBar = document.querySelector(".launch-bar");
+    if (launchBar) {
+      const launchObserver = new IntersectionObserver(
+        ([entry]) => siteHeader.classList.toggle("scrolled", !entry.isIntersecting),
+        { threshold: 0 }
+      );
+      launchObserver.observe(launchBar);
+    }
+  }
+
+  // --- Scroll to top --------------------------------------------------
+  const scrollTopBtn = document.getElementById("scroll-top");
+  if (scrollTopBtn) {
+    scrollTopBtn.hidden = false;
+    window.addEventListener("scroll", () => {
+      scrollTopBtn.classList.toggle("visible", window.scrollY > 600);
+    }, { passive: true });
+
+    scrollTopBtn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: scrollBehavior() });
+    });
+  }
+
+  // --- Floating CTA ---------------------------------------------------
+  const floatingCta = document.getElementById("floating-cta");
+  const heroSection = document.getElementById("inicio");
+  const cadastroSection = document.getElementById("cadastro");
+
+  if (floatingCta && heroSection && cadastroSection) {
+    floatingCta.hidden = false;
+    let heroVisible = true;
+    let cadastroVisible = false;
+
+    const updateFloatingCta = () => {
+      floatingCta.classList.toggle("visible", !heroVisible && !cadastroVisible);
+    };
+
+    const heroObserver = new IntersectionObserver(
+      ([entry]) => { heroVisible = entry.isIntersecting; updateFloatingCta(); },
+      { threshold: 0.15 }
+    );
+    const cadastroObserver = new IntersectionObserver(
+      ([entry]) => { cadastroVisible = entry.isIntersecting; updateFloatingCta(); },
+      { threshold: 0.1 }
+    );
+
+    heroObserver.observe(heroSection);
+    cadastroObserver.observe(cadastroSection);
+  }
+
+  // --- Count-up animation on hero proof stats -------------------------
+  if (!prefersReducedMotion()) {
+    const proofNumbers = document.querySelectorAll(".hero-proof b");
+    if (proofNumbers.length > 0) {
+      const countUp = (el) => {
+        const target = parseInt(el.textContent, 10);
+        if (isNaN(target) || target <= 0) return;
+        const duration = 1400;
+        const start = performance.now();
+        el.textContent = "0";
+
+        const step = (now) => {
+          const progress = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          el.textContent = Math.round(target * eased);
+          if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+
+      const proofObserver = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            proofNumbers.forEach(countUp);
+            proofObserver.disconnect();
+          }
+        },
+        { threshold: 0.5 }
+      );
+      const proofContainer = document.querySelector(".hero-proof");
+      if (proofContainer) proofObserver.observe(proofContainer);
+    }
+  }
+
+  // --- Participation cards link to #cadastro --------------------------
+  document.querySelectorAll(".participation-grid article").forEach((card) => {
+    card.addEventListener("click", () => {
+      document.getElementById("cadastro")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+    });
+    card.setAttribute("role", "link");
+  });
 })();

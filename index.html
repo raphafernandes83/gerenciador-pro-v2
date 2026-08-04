@@ -13,10 +13,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20260804-1">
+  <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
   <script defer src="config.js?v=20260803-2"></script>
-  <script defer src="script.js?v=20260804-2"></script>
+  <script defer src="script.js?v=20260804-3"></script>
 </head>
 <body>
+  <a class="skip-link" href="#inicio">Pular para o conteudo</a>
   <div class="ambient ambient-one" aria-hidden="true"></div>
   <div class="ambient ambient-two" aria-hidden="true"></div>
   <div class="grid-overlay" aria-hidden="true"></div>
@@ -45,6 +47,19 @@
       <a href="#inteligencia">Inteligência</a>
       <a class="header-link" href="#cadastro">Quero participar</a>
     </nav>
+
+    <button class="hamburger-btn" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="mobile-menu">
+      <span></span><span></span><span></span>
+    </button>
+
+    <div class="mobile-menu" id="mobile-menu" aria-label="Menu de navegação" hidden>
+      <nav>
+        <a href="#diferenciais">Diferenciais</a>
+        <a href="#comparativo">Comparativo</a>
+        <a href="#inteligencia">Inteligência</a>
+        <a href="#cadastro">Quero participar</a>
+      </nav>
+    </div>
   </header>
 
   <main>
@@ -852,5 +867,11 @@
       <span>© <b id="current-year"></b></span>
     </div>
   </footer>
+
+  <div class="floating-cta" id="floating-cta" hidden>
+    <a href="#cadastro" class="floating-cta-btn">Entrar na lista <span>→</span></a>
+  </div>
+
+  <button class="scroll-top" id="scroll-top" type="button" aria-label="Voltar ao topo" hidden>↑</button>
 </body>
 </html>
