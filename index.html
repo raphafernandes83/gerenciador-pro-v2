@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260803-2">
+  <link rel="stylesheet" href="styles.css?v=20260804-1">
   <script defer src="config.js?v=20260803-2"></script>
-  <script defer src="script.js?v=20260803-2"></script>
+  <script defer src="script.js?v=20260804-2"></script>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -596,18 +596,33 @@
             <span class="mini-label">PRÉ-CADASTRO</span>
             <h3>Entre para a lista</h3>
           </div>
-          <span class="secure-badge">🔒 Ambiente protegido</span>
+          <span class="secure-badge">Cadastro gratuito, sem cobrança nesta etapa</span>
         </div>
 
-        <div class="interest-tabs" role="radiogroup" aria-label="Tipo de interesse">
-          <button class="interest-tab active" type="button" data-interest="comprar" role="radio" aria-checked="true">
-            <span class="tab-icon">◉</span>
-            <span><strong>Quero utilizar</strong><small>Tenho interesse em conhecer e adquirir</small></span>
-          </button>
-          <button class="interest-tab" type="button" data-interest="revender" role="radio" aria-checked="false">
-            <span class="tab-icon">↗</span>
-            <span><strong>Quero ser parceiro</strong><small>Tenho público ou canal de divulgação</small></span>
-          </button>
+        <div class="step-indicator" id="step-indicator" aria-hidden="true">
+          <span class="step-dot active" data-step-dot="1"><i>1</i><b>Perfil</b></span>
+          <span class="step-connector"></span>
+          <span class="step-dot" data-step-dot="2"><i>2</i><b>Essenciais</b></span>
+          <span class="step-connector"></span>
+          <span class="step-dot" data-step-dot="3"><i>3</i><b>Complementares</b></span>
+        </div>
+        <p class="step-status" id="step-status" tabindex="-1" aria-live="polite">Etapa 1 de 3 — Perfil</p>
+
+        <div class="form-step" data-step="1" id="form-step-1">
+          <div class="interest-tabs" role="radiogroup" aria-label="Tipo de interesse">
+            <button class="interest-tab active" type="button" data-interest="comprar" role="radio" aria-checked="true">
+              <span class="tab-icon" aria-hidden="true">◉</span>
+              <span><strong>Quero utilizar</strong><small>Tenho interesse em conhecer e adquirir</small></span>
+            </button>
+            <button class="interest-tab" type="button" data-interest="revender" role="radio" aria-checked="false">
+              <span class="tab-icon" aria-hidden="true">↗</span>
+              <span><strong>Quero ser parceiro</strong><small>Tenho público ou canal de divulgação</small></span>
+            </button>
+          </div>
+
+          <div class="step-actions">
+            <button type="button" class="button button-primary step-next" data-goto="2">Continuar</button>
+          </div>
         </div>
 
         <form id="lead-form" novalidate>
@@ -623,90 +638,59 @@
             <label>Não preencha este campo<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
           </div>
 
-          <div class="form-grid two-columns">
-            <div class="field">
-              <label for="nome">Nome completo <em>*</em></label>
-              <input id="nome" name="nome" type="text" placeholder="Como podemos chamar você?" autocomplete="name" required minlength="3">
-              <span class="field-error"></span>
-            </div>
-            <div class="field">
-              <label for="whatsapp">WhatsApp <em>*</em></label>
-              <input id="whatsapp" name="whatsapp" type="tel" placeholder="+55 (21) 99999-9999" autocomplete="tel" required>
-              <span class="field-hint">Inclua o DDD e, se estiver fora do Brasil, o código do país.</span>
-              <span class="field-error"></span>
-            </div>
-          </div>
-
-          <div class="form-grid two-columns">
-            <div class="field">
-              <label for="email">E-mail <em>*</em></label>
-              <input id="email" name="email" type="email" placeholder="seuemail@exemplo.com" autocomplete="email" required>
-              <span class="field-error"></span>
-            </div>
-            <div class="field">
-              <label for="pais">País <em>*</em></label>
-              <select id="pais" name="pais" required>
-                <option value="">Selecione</option>
-                <option>Brasil</option>
-                <option>Angola</option>
-                <option>Moçambique</option>
-                <option>Portugal</option>
-                <option>Cabo Verde</option>
-                <option>Guiné-Bissau</option>
-                <option>São Tomé e Príncipe</option>
-                <option>Outro</option>
-              </select>
-              <span class="field-error"></span>
-            </div>
-          </div>
-
-          <div class="form-grid two-columns">
-            <div class="field">
-              <label for="cidade_estado">Cidade e estado/província</label>
-              <input id="cidade_estado" name="cidade_estado" type="text" placeholder="Ex.: Rio de Janeiro — RJ">
-            </div>
-            <div class="field">
-              <label for="contato_preferido">Prefere receber novidades por</label>
-              <select id="contato_preferido" name="contato_preferido">
-                <option value="WhatsApp">WhatsApp</option>
-                <option value="E-mail">E-mail</option>
-                <option value="Ambos">WhatsApp e e-mail</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="buyer-fields" class="conditional-fields">
+          <div class="form-step" data-step="2" id="form-step-2" hidden>
             <div class="form-grid two-columns">
               <div class="field">
-                <label for="experiencia_trading">Experiência no mercado</label>
-                <select id="experiencia_trading" name="experiencia_trading">
-                  <option value="">Selecione</option>
-                  <option>Ainda não opero</option>
-                  <option>Menos de 6 meses</option>
-                  <option>De 6 meses a 2 anos</option>
-                  <option>Mais de 2 anos</option>
-                </select>
+                <label for="nome">Nome completo <em>*</em></label>
+                <input id="nome" name="nome" type="text" placeholder="Como podemos chamar você?" autocomplete="name" required minlength="3" aria-describedby="nome-error">
+                <span class="field-error" id="nome-error" aria-live="polite"></span>
               </div>
               <div class="field">
-                <label for="principal_objetivo">Principal objetivo</label>
-                <select id="principal_objetivo" name="principal_objetivo">
+                <label for="whatsapp">WhatsApp <em>*</em></label>
+                <input id="whatsapp" name="whatsapp" type="tel" inputmode="tel" enterkeyhint="next" placeholder="+55 (21) 99999-9999" autocomplete="tel" required aria-describedby="whatsapp-hint whatsapp-error">
+                <span class="field-hint" id="whatsapp-hint">Inclua o DDD e, se estiver fora do Brasil, o código do país.</span>
+                <span class="field-error" id="whatsapp-error" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <div class="form-grid two-columns">
+              <div class="field">
+                <label for="email">E-mail (opcional)</label>
+                <input id="email" name="email" type="email" inputmode="email" placeholder="seuemail@exemplo.com" autocomplete="email" aria-describedby="email-error">
+                <span class="field-error" id="email-error" aria-live="polite"></span>
+              </div>
+              <div class="field">
+                <label for="pais">País <em>*</em></label>
+                <select id="pais" name="pais" required aria-describedby="pais-error">
                   <option value="">Selecione</option>
-                  <option>Organizar minhas operações</option>
-                  <option>Acompanhar minha evolução</option>
-                  <option>Melhorar disciplina e rotina</option>
-                  <option>Estudar estratégias de forma didática</option>
-                  <option>Conhecer novas ferramentas</option>
+                  <option>Brasil</option>
+                  <option>Angola</option>
+                  <option>Moçambique</option>
+                  <option>Portugal</option>
+                  <option>Cabo Verde</option>
+                  <option>Guiné-Bissau</option>
+                  <option>São Tomé e Príncipe</option>
                   <option>Outro</option>
                 </select>
+                <span class="field-error" id="pais-error" aria-live="polite"></span>
               </div>
             </div>
-          </div>
 
-          <div id="reseller-fields" class="conditional-fields hidden" aria-hidden="true">
-            <div class="form-grid two-columns">
+            <div class="form-grid">
+              <div class="field">
+                <label for="contato_preferido">Prefere receber novidades por</label>
+                <select id="contato_preferido" name="contato_preferido">
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="E-mail">E-mail</option>
+                  <option value="Ambos">WhatsApp e e-mail</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="step2-reseller-fields" class="form-grid profile-reseller-only hidden" aria-hidden="true">
               <div class="field">
                 <label for="canal_divulgacao">Principal canal de divulgação <em>*</em></label>
-                <select id="canal_divulgacao" name="canal_divulgacao">
+                <select id="canal_divulgacao" name="canal_divulgacao" aria-describedby="canal_divulgacao-error">
                   <option value="">Selecione</option>
                   <option>Grupo de WhatsApp</option>
                   <option>Grupo de Facebook</option>
@@ -717,69 +701,118 @@
                   <option>Atendimento presencial</option>
                   <option>Outro</option>
                 </select>
-                <span class="field-error"></span>
-              </div>
-              <div class="field">
-                <label for="tamanho_publico">Tamanho aproximado do público</label>
-                <select id="tamanho_publico" name="tamanho_publico">
-                  <option value="">Selecione</option>
-                  <option>Ainda estou começando</option>
-                  <option>Até 500 pessoas</option>
-                  <option>De 501 a 2.000 pessoas</option>
-                  <option>De 2.001 a 10.000 pessoas</option>
-                  <option>Mais de 10.000 pessoas</option>
-                </select>
+                <span class="field-error" id="canal_divulgacao-error" aria-live="polite"></span>
               </div>
             </div>
 
-            <div class="form-grid two-columns">
-              <div class="field">
-                <label for="link_canal">Link do perfil, grupo ou canal</label>
-                <input id="link_canal" name="link_canal" type="url" placeholder="https://...">
-              </div>
-              <div class="field">
-                <label for="experiencia_afiliado">Experiência com vendas ou afiliados</label>
-                <select id="experiencia_afiliado" name="experiencia_afiliado">
-                  <option value="">Selecione</option>
-                  <option>Nenhuma</option>
-                  <option>Já divulguei produtos ocasionalmente</option>
-                  <option>Já trabalho como afiliado</option>
-                  <option>Tenho equipe ou operação de vendas</option>
-                </select>
-              </div>
+            <div class="step-actions">
+              <button type="button" class="button button-secondary step-back" data-goto="1">Voltar</button>
+              <button type="button" class="button button-primary step-next" data-goto="3">Continuar</button>
             </div>
           </div>
 
-          <div class="field">
-            <label for="observacao">Algo que gostaria de nos contar?</label>
-            <textarea id="observacao" name="observacao" rows="4" maxlength="700" placeholder="Conte brevemente o que espera da plataforma ou como pretende divulgá-la."></textarea>
-            <span class="character-counter"><b id="counter">0</b>/700</span>
+          <div class="form-step" data-step="3" id="form-step-3" hidden>
+            <div class="form-grid">
+              <div class="field">
+                <label for="cidade_estado">Cidade e estado/província</label>
+                <input id="cidade_estado" name="cidade_estado" type="text" placeholder="Ex.: Rio de Janeiro — RJ">
+              </div>
+            </div>
+
+            <div id="buyer-fields" class="conditional-fields profile-buyer-only">
+              <div class="form-grid two-columns">
+                <div class="field">
+                  <label for="experiencia_trading">Experiência no mercado</label>
+                  <select id="experiencia_trading" name="experiencia_trading">
+                    <option value="">Selecione</option>
+                    <option>Ainda não opero</option>
+                    <option>Menos de 6 meses</option>
+                    <option>De 6 meses a 2 anos</option>
+                    <option>Mais de 2 anos</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="principal_objetivo">Principal objetivo</label>
+                  <select id="principal_objetivo" name="principal_objetivo">
+                    <option value="">Selecione</option>
+                    <option>Organizar minhas operações</option>
+                    <option>Acompanhar minha evolução</option>
+                    <option>Melhorar disciplina e rotina</option>
+                    <option>Estudar estratégias de forma didática</option>
+                    <option>Conhecer novas ferramentas</option>
+                    <option>Outro</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div id="reseller-fields" class="conditional-fields profile-reseller-only hidden" aria-hidden="true">
+              <div class="form-grid two-columns">
+                <div class="field">
+                  <label for="tamanho_publico">Tamanho aproximado do público</label>
+                  <select id="tamanho_publico" name="tamanho_publico">
+                    <option value="">Selecione</option>
+                    <option>Ainda estou começando</option>
+                    <option>Até 500 pessoas</option>
+                    <option>De 501 a 2.000 pessoas</option>
+                    <option>De 2.001 a 10.000 pessoas</option>
+                    <option>Mais de 10.000 pessoas</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="link_canal">Link do perfil, grupo ou canal</label>
+                  <input id="link_canal" name="link_canal" type="url" inputmode="url" placeholder="https://...">
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label for="experiencia_afiliado">Experiência com vendas ou afiliados</label>
+                  <select id="experiencia_afiliado" name="experiencia_afiliado">
+                    <option value="">Selecione</option>
+                    <option>Nenhuma</option>
+                    <option>Já divulguei produtos ocasionalmente</option>
+                    <option>Já trabalho como afiliado</option>
+                    <option>Tenho equipe ou operação de vendas</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="observacao">Algo que gostaria de nos contar?</label>
+              <textarea id="observacao" name="observacao" rows="4" maxlength="700" placeholder="Conte brevemente o que espera da plataforma ou como pretende divulgá-la."></textarea>
+              <span class="character-counter"><b id="counter">0</b>/700</span>
+            </div>
+
+            <label class="consent-row">
+              <input id="consentimento" name="consentimento" type="checkbox" value="Sim" required aria-describedby="consent-error">
+              <span>
+                Autorizo o contato por WhatsApp e/ou e-mail para receber informações relacionadas ao
+                Gerenciador PRO. Li o <a href="privacidade.html" target="_blank">Aviso de Privacidade</a>.
+                <em>*</em>
+              </span>
+            </label>
+            <span class="consent-error" id="consent-error" aria-live="polite"></span>
+
+            <div id="form-notice" class="form-notice" role="alert" aria-live="assertive" hidden></div>
+
+            <div class="step-actions">
+              <button type="button" class="button button-secondary step-back" data-goto="2">Voltar</button>
+              <button class="submit-button" id="submit-button" type="submit">
+                <span class="button-label">Entrar na lista oficial</span>
+                <span class="button-loader" aria-hidden="true"></span>
+              </button>
+            </div>
+
+            <p class="security-note">Seus dados não serão vendidos nem compartilhados para publicidade de terceiros.</p>
           </div>
-
-          <label class="consent-row">
-            <input id="consentimento" name="consentimento" type="checkbox" value="Sim" required>
-            <span>
-              Autorizo o contato por WhatsApp e/ou e-mail para receber informações relacionadas ao
-              Gerenciador PRO. Li o <a href="privacidade.html" target="_blank">Aviso de Privacidade</a>.
-              <em>*</em>
-            </span>
-          </label>
-          <span class="consent-error" id="consent-error"></span>
-
-          <div id="form-notice" class="form-notice" hidden></div>
-
-          <button class="submit-button" id="submit-button" type="submit">
-            <span class="button-label">Entrar na lista oficial</span>
-            <span class="button-loader" aria-hidden="true"></span>
-          </button>
-
-          <p class="security-note">🔒 Seus dados não serão vendidos nem compartilhados para publicidade de terceiros.</p>
         </form>
 
-        <div class="success-state" id="success-state" hidden>
-          <div class="success-icon">✓</div>
+        <div class="success-state" id="success-state" role="status" aria-live="polite" hidden>
+          <div class="success-icon" aria-hidden="true">✓</div>
           <span class="mini-label">CADASTRO CONFIRMADO</span>
-          <h2>Você entrou para a lista!</h2>
+          <h2 id="success-title">Cadastro confirmado</h2>
           <p id="success-message">Avisaremos você quando houver novidades importantes sobre o Gerenciador PRO.</p>
           <button class="button button-secondary" id="new-registration" type="button">Fazer outro cadastro</button>
         </div>
