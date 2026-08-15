@@ -572,4 +572,127 @@
   restoreHiddenValues();
   goToStep(1, { focusStatus: false, scroll: false });
   document.getElementById("current-year").textContent = new Date().getFullYear();
+
+  // === Navegação, CTA flutuante e acessibilidade =====================
+
+  const hamburgerBtn = document.querySelector(".hamburger-btn");
+  const mobileMenu = document.getElementById("mobile-menu");
+
+  if (hamburgerBtn && mobileMenu) {
+    const closeMenu = ({ refocus = false } = {}) => {
+      mobileMenu.classList.remove("open");
+      hamburgerBtn.classList.remove("active");
+      hamburgerBtn.setAttribute("aria-expanded", "false");
+      document.body.style.overflow = "";
+      if (refocus) hamburgerBtn.focus();
+    };
+
+    hamburgerBtn.addEventListener("click", () => {
+      if (mobileMenu.classList.contains("open")) {
+        closeMenu();
+        return;
+      }
+      mobileMenu.hidden = false;
+      requestAnimationFrame(() => {
+        mobileMenu.classList.add("open");
+        hamburgerBtn.classList.add("active");
+        hamburgerBtn.setAttribute("aria-expanded", "true");
+        document.body.style.overflow = "hidden";
+        mobileMenu.querySelector("a")?.focus();
+      });
+    });
+
+    mobileMenu.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => closeMenu());
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && mobileMenu.classList.contains("open")) closeMenu({ refocus: true });
+    });
+  }
+
+  const siteHeader = document.querySelector(".site-header");
+  const launchBar = document.querySelector(".launch-bar");
+  if (siteHeader && launchBar) {
+    new IntersectionObserver(
+      ([entry]) => siteHeader.classList.toggle("scrolled", !entry.isIntersecting),
+      { threshold: 0 }
+    ).observe(launchBar);
+  }
+
+  const scrollTopBtn = document.getElementById("scroll-top");
+  if (scrollTopBtn) {
+    scrollTopBtn.hidden = false;
+    window.addEventListener(
+      "scroll",
+      () => scrollTopBtn.classList.toggle("visible", window.scrollY > 600),
+      { passive: true }
+    );
+    scrollTopBtn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: scrollBehavior() });
+    });
+  }
+
+  const floatingCta = document.getElementById("floating-cta");
+  const heroSection = document.getElementById("inicio");
+  const cadastroSection = document.getElementById("cadastro");
+
+  if (floatingCta && heroSection && cadastroSection) {
+    floatingCta.hidden = false;
+    let heroVisible = true;
+    let cadastroVisible = false;
+    const update = () => floatingCta.classList.toggle("visible", !heroVisible && !cadastroVisible);
+
+    new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; update(); }, { threshold: 0.15 })
+      .observe(heroSection);
+    new IntersectionObserver(([e]) => { cadastroVisible = e.isIntersecting; update(); }, { threshold: 0.1 })
+      .observe(cadastroSection);
+  }
+
+  if (!prefersReducedMotion()) {
+    const proofNumbers = document.querySelectorAll(".hero-proof b");
+    const proofContainer = document.querySelector(".hero-proof");
+    if (proofNumbers.length && proofContainer) {
+      const countUp = (el) => {
+        const target = parseInt(el.textContent, 10);
+        if (!Number.isFinite(target) || target <= 0) return;
+        const duration = 1400;
+        const start = performance.now();
+        el.textContent = "0";
+        const step = (now) => {
+          const progress = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          el.textContent = Math.round(target * eased);
+          if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+
+      const proofObserver = new IntersectionObserver(
+        ([entry]) => {
+          if (!entry.isIntersecting) return;
+          proofNumbers.forEach(countUp);
+          proofObserver.disconnect();
+        },
+        { threshold: 0.5 }
+      );
+      proofObserver.observe(proofContainer);
+    }
+  }
+
+  // Card inteiro leva ao cadastro. role="link" exige foco e ativação por
+  // teclado — sem isso o card fica anunciado como link e inalcançável.
+  document.querySelectorAll(".participation-grid article").forEach((card) => {
+    const goToCadastro = () =>
+      cadastroSection?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+    card.setAttribute("role", "link");
+    card.setAttribute("tabindex", "0");
+    card.addEventListener("click", goToCadastro);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        goToCadastro();
+      }
+    });
+  });
 })();
