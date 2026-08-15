@@ -2014,3 +2014,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .lang-option.pendente { cursor: default; opacity: .55; justify-content: space-between; gap: 12px; }
 .lang-option.pendente:hover { background: transparent; color: var(--muted); }
 .lang-option small { color: var(--muted-2); font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .06em; }
+
+/* Campo de telefone internacional */
+.phone-row { display: grid; grid-template-columns: auto 1fr; gap: 9px; }
+.phone-ddi {
+  width: auto;
+  min-width: 108px;
+  padding: 0 10px;
+  height: 48px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+@media (max-width: 380px) {
+  .phone-row { grid-template-columns: 1fr; }
+  .phone-ddi { min-width: 0; }
+}

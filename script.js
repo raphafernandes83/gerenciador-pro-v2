@@ -1,6 +1,11 @@
 (() => {
   "use strict";
 
+  // Mensagens que só existem no JavaScript passam pelo dicionário do idioma
+  // ativo; o texto em inglês fica como padrão se a chave faltar.
+  const T = (chave, padrao) =>
+    (window.GP_I18N && window.GP_I18N.t) ? window.GP_I18N.t(chave, padrao) : padrao;
+
   const form = document.getElementById("lead-form");
   const tabs = [...document.querySelectorAll(".interest-tab")];
   const interestInput = document.getElementById("tipo_interesse");
@@ -31,7 +36,11 @@
   const stepDots = [...document.querySelectorAll(".step-dot")];
   const stepStatus = document.getElementById("step-status");
   const stepIndicator = document.getElementById("step-indicator");
-  const stepLabels = { 1: "Perfil", 2: "Essenciais", 3: "Complementares" };
+  const stepLabels = () => ({
+    1: T("cadastro.15", "Profile"),
+    2: T("cadastro.16", "Essentials"),
+    3: T("cadastro.17", "Extras"),
+  });
   let currentStep = 1;
 
   function prefersReducedMotion() {
@@ -57,7 +66,9 @@
     });
 
     if (stepStatus) {
-      stepStatus.textContent = `Etapa ${stepNumber} de 3 — ${stepLabels[stepNumber]}`;
+      stepStatus.textContent = T("msg.etapa", "Step {n} of 3 — {rotulo}")
+        .replace("{n}", String(stepNumber))
+        .replace("{rotulo}", stepLabels()[stepNumber]);
       if (focusStatus) stepStatus.focus({ preventScroll: true });
     }
 
@@ -168,12 +179,14 @@
   function validateRequiredField(element) {
     const value = element.type === "checkbox" ? element.checked : element.value.trim();
 
-    if (!value) return "Este campo é obrigatório.";
+    if (!value) return T("msg.obrigatorio", "This field is required.");
     if (element.id === "nome" && element.value.trim().length < 3) {
-      return "Informe seu nome completo.";
+      return T("msg.nome", "Enter your full name.");
     }
-    if (element.id === "whatsapp" && element.value.replace(/\D/g, "").length < 10) {
-      return "Informe um WhatsApp válido com DDD.";
+    if (element.id === "whatsapp") {
+      const tel = window.GP_TELEFONE;
+      const ok = tel ? tel.valido() : element.value.replace(/\D/g, "").length >= 6;
+      if (!ok) return T("msg.whatsapp", "Enter a valid WhatsApp number for the selected country.");
     }
     return "";
   }
@@ -183,7 +196,7 @@
     const value = element.value.trim();
     if (!value) return "";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      return "Informe um e-mail válido ou deixe o campo em branco.";
+      return T("msg.email", "Enter a valid email or leave the field blank.");
     }
     return "";
   }
@@ -342,7 +355,7 @@
 
       const iframe = document.createElement("iframe");
       iframe.name = frameName;
-      iframe.title = "Confirmação de cadastro";
+      iframe.title = T("msg.confirmacao", "Registration confirmation");
       iframe.hidden = true;
       iframe.srcdoc = "<!doctype html><html><body></body></html>";
 
@@ -393,7 +406,7 @@
           return;
         }
 
-        finish(() => reject(new Error(result.error || "O cadastro não foi gravado.")));
+        finish(() => reject(new Error(result.error || T("msg.naoGravado", "Your registration was not saved."))));
       };
 
       const onFrameLoad = () => {
@@ -407,7 +420,7 @@
         finish(() =>
           reject(
             new Error(
-              "A planilha não confirmou a gravação. Aguarde alguns segundos e tente novamente."
+              T("msg.semConfirmacao", "The spreadsheet did not confirm the save. Wait a few seconds and try again.")
             )
           )
         );
@@ -480,12 +493,12 @@
 
     if (form.elements.website.value) {
       // Honeypot preenchido: tratado como envio malicioso, sem detalhar o motivo.
-      showNotice("Não foi possível enviar o cadastro.");
+      showNotice(T("msg.falhaEnvio", "We couldn't send your registration."));
       return;
     }
 
     if (!isConfigured()) {
-      showNotice("O armazenamento dos cadastros ainda não foi configurado.", "info");
+      showNotice(T("msg.semArmazenamento", "Registration storage has not been set up yet."), "info");
       return;
     }
 
@@ -506,23 +519,23 @@
       playSuccessChime();
 
       if (result.duplicate) {
-        if (successTitle) successTitle.textContent = "Você já estava na lista";
+        if (successTitle) successTitle.textContent = T("msg.jaTitulo", "You were already on the list");
         successMessage.textContent =
-          "Este contato já estava cadastrado. Seu interesse continua registrado em nossa lista.";
+          T("msg.jaTexto", "This contact was already registered. Your interest remains on our list.");
       } else if (submittedInterest === "revender") {
-        if (successTitle) successTitle.textContent = "Você entrou como parceiro";
+        if (successTitle) successTitle.textContent = T("msg.parceiroTitulo", "You joined as a partner");
         successMessage.textContent =
-          "Seu interesse como parceiro foi gravado. Entraremos em contato quando o programa de revendedores estiver disponível.";
+          T("msg.parceiroTexto", "Your interest as a partner has been saved. We will get in touch once the reseller programme is available.");
       } else {
-        if (successTitle) successTitle.textContent = "Você entrou como futuro usuário";
+        if (successTitle) successTitle.textContent = T("msg.usuarioTitulo", "You joined as a future user");
         successMessage.textContent =
-          "Seu cadastro foi gravado e confirmado pela planilha. Avisaremos você quando houver novidades importantes.";
+          T("msg.usuarioTexto", "Your registration was saved and confirmed. We will let you know when there is important news.");
       }
 
       successState.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     } catch (error) {
       showNotice(
-        error?.message || "Não conseguimos concluir o cadastro. Tente novamente.",
+        error?.message || T("msg.falhaGenerica", "We couldn't complete your registration. Please try again."),
         "error"
       );
     } finally {
@@ -535,38 +548,18 @@
 
   newRegistrationButton.addEventListener("click", resetRegistrationForm);
 
-  // DDDs brasileiros válidos (ANATEL). Só aplicamos a máscara "(XX) XXXXX-XXXX"
-  // quando os dois primeiros dígitos batem com um DDD real — assim um número
-  // estrangeiro digitado sem "+" não é forçado num formato brasileiro errado.
-  const VALID_BR_DDD = new Set([
-    11, 12, 13, 14, 15, 16, 17, 18, 19,
-    21, 22, 24, 27, 28,
-    31, 32, 33, 34, 35, 37, 38,
-    41, 42, 43, 44, 45, 46, 47, 48, 49,
-    51, 53, 54, 55,
-    61, 62, 63, 64, 65, 66, 67, 68, 69,
-    71, 73, 74, 75, 77, 79,
-    81, 82, 83, 84, 85, 86, 87, 88, 89,
-    91, 92, 93, 94, 95, 96, 97, 98, 99
-  ]);
-
-  document.getElementById("whatsapp").addEventListener("input", (event) => {
-    if (event.target.value.trim().startsWith("+")) return;
-
-    const digits = event.target.value.replace(/\D/g, "").slice(0, 11);
-
-    if (digits.length < 2 || !VALID_BR_DDD.has(Number(digits.slice(0, 2)))) {
-      event.target.value = digits;
-    } else if (digits.length <= 7) {
-      event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    } else {
-      event.target.value = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-    }
-  });
+  // A formatação e a validação do WhatsApp passaram para telefone.js,
+  // que respeita o formato de cada país em vez de assumir o Brasil.
 
   document.getElementById("link_canal").addEventListener("blur", (event) => {
     if (!event.target.value.trim()) return;
     event.target.value = normalizeLinkValue(event.target.value);
+  });
+
+  // O indicador de etapa e as mensagens de erro são montados em JavaScript,
+  // então precisam ser redesenhados quando o idioma muda.
+  document.addEventListener("gp:idioma", () => {
+    goToStep(currentStep, { focusStatus: false, scroll: false });
   });
 
   restoreHiddenValues();

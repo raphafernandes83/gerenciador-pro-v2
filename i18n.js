@@ -21,6 +21,7 @@
   ];
   const CHAVE_ARMAZENAMENTO = "gp-idioma";
   const cache = new Map();
+  let dicionarioAtual = null;   // null = inglês, que já está no HTML
 
   const EM_BREVE = {
     en: "soon", pt: "em breve", es: "pronto",
@@ -103,6 +104,7 @@
     if (codigo !== PADRAO && !dic) codigo = PADRAO;   // falhou: fica no padrao
 
     aplicar(dic);
+    dicionarioAtual = dic;
 
     const info = IDIOMAS.find(i => i.codigo === codigo);
     garantirFonte(info);   // aqui e nao no clique: cobre tambem o idioma ja salvo
@@ -178,7 +180,19 @@
     });
   }
 
-  window.GP_I18N = { definir, IDIOMAS, PADRAO };
+  /* Textos que só existem em JavaScript (mensagens de erro, avisos de
+     envio). O segundo argumento é o texto em inglês, que serve de padrão
+     e mantém a mensagem legível mesmo se a chave faltar no dicionário. */
+  function t(chave, padraoIngles) {
+    const traduzido = dicionarioAtual && dicionarioAtual[chave];
+    return traduzido != null ? traduzido : padraoIngles;
+  }
+
+  function idiomaAtual() {
+    return document.documentElement.lang || PADRAO;
+  }
+
+  window.GP_I18N = { definir, t, idiomaAtual, IDIOMAS, PADRAO };
 
   document.addEventListener("DOMContentLoaded", () => {
     montarSeletor();
