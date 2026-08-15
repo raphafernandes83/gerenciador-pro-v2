@@ -14,7 +14,7 @@
   align-items: center;
   gap: 8px;
   color: var(--muted-2);
-  font-size: .62rem;
+  font-size: var(--fs-2xs);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -26,9 +26,9 @@
   place-items: center;
   border-radius: 50%;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,.02);
+  background: var(--surface);
   font-style: normal;
-  font-size: .62rem;
+  font-size: var(--fs-2xs);
 }
 .step-dot.active { color: var(--text); }
 .step-dot.active i {
@@ -50,7 +50,7 @@
 .step-status {
   margin: 0 0 22px;
   color: var(--muted-2);
-  font-size: .6rem;
+  font-size: var(--fs-2xs);
   letter-spacing: .04em;
 }
 .step-status:focus { outline: none; }
