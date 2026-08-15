@@ -32,9 +32,9 @@
 }
 .step-dot.active { color: var(--text); }
 .step-dot.active i {
-  border-color: rgba(255,122,26,.55);
-  background: rgba(255,122,26,.12);
-  color: var(--orange-2);
+  border-color: rgba(86,183,255,.5);
+  background: rgba(86,183,255,.12);
+  color: var(--blue);
 }
 .step-dot.done i {
   border-color: rgba(41,217,154,.4);
