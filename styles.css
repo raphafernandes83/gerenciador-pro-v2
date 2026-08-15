@@ -1889,8 +1889,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   overflow: hidden;
 }
 .sim-track i { display: block; height: 100%; border-radius: 3px; }
-.sim-stat.bad .sim-track i { width: 67%; background: var(--muted-2); }
-.sim-stat.good .sim-track i { width: 12%; background: var(--orange); }
+.sim-stat.bad .sim-track i { width: 35.4%; background: var(--muted-2); }
+.sim-stat.good .sim-track i { width: 49.3%; background: var(--orange); }
 
 .sim-conditions {
   margin-top: 18px;

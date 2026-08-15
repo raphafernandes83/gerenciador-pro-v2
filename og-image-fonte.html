@@ -85,8 +85,8 @@
   .stat.bad .who { color: var(--muted); }
   .track { display: block; height: 14px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; }
   .fill { display: block; height: 100%; border-radius: 3px; }
-  .stat.bad .fill { width: 67%; background: var(--muted-2); }
-  .stat.good .fill { width: 12%; background: var(--orange); }
+  .stat.bad .fill { width: 35.4%; background: var(--muted-2); }
+  .stat.good .fill { width: 49.3%; background: var(--orange); }
 
   footer {
     padding-top: 20px;
@@ -112,25 +112,25 @@
   </header>
 
   <p class="lead layer">
-    Risco de quebrar a banca em 100 operações,<br>
+    Sessões que batem a meta,<br>
     <em>operando com 50% de acerto.</em>
   </p>
 
   <div class="duo layer">
     <div class="stat bad">
-      <span class="num">67%</span>
-      <span class="who">Martingale clássico</span>
+      <span class="num">35%</span>
+      <span class="who">Entrada fixa</span>
       <span class="track"><span class="fill"></span></span>
     </div>
     <div class="stat good">
-      <span class="num">12%</span>
+      <span class="num">49%</span>
       <span class="who">Gerenciador PRO</span>
       <span class="track"><span class="fill"></span></span>
     </div>
   </div>
 
   <footer class="layer">
-    Banca $100 · entrada $2 (2% da banca) · payout 87% · 200.000 simulações
+    Banca $10.000 · entrada 2% · meta +10% · stop −15% · payout 87% · 200.000 sessões
   </footer>
 </body>
 </html>
