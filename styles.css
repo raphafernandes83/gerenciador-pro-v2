@@ -1946,3 +1946,69 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .sim-stat, .compat-grid article { padding: 22px; }
   .sim-conditions { padding: 20px; }
 }
+
+/* === Seletor de idioma ============================================= */
+
+.lang-switch { position: relative; flex: 0 0 auto; }
+.lang-toggle {
+  min-height: 40px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-2xs);
+  font-weight: 800;
+  letter-spacing: .06em;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.lang-toggle:hover { color: var(--text); border-color: var(--blue); }
+.lang-toggle svg { flex: 0 0 auto; opacity: .85; }
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 220;
+  min-width: 172px;
+  padding: 7px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #0d131c;
+  box-shadow: var(--shadow-md);
+}
+.lang-menu[hidden] { display: none; }
+.lang-option {
+  min-height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition: background .16s, color .16s;
+}
+.lang-option:hover { background: var(--surface-2); color: var(--text); }
+.lang-option.active { color: var(--text); background: rgba(86,183,255,.12); font-weight: 800; }
+
+@media (max-width: 1080px) {
+  .lang-menu { right: -6px; }
+}
+@media (max-width: 560px) {
+  .lang-toggle { min-height: 36px; padding: 0 10px; }
+  .lang-toggle .lang-current { display: none; }
+}
+.lang-option.pendente { cursor: default; opacity: .55; justify-content: space-between; gap: 12px; }
+.lang-option.pendente:hover { background: transparent; color: var(--muted); }
+.lang-option small { color: var(--muted-2); font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .06em; }
