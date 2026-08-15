@@ -539,6 +539,8 @@ section { scroll-margin-top: 108px; }
 }
 
 .comparison-section,
+.simulation-section,
+.compat-section,
 .exclusive-section,
 .flow-section,
 .operations-section,
@@ -1837,4 +1839,110 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .header-link:hover,
   .floating-cta-btn:hover,
   .interest-tab:hover { transform: none; }
+}
+
+/* === Simulação de risco e compatibilidade ========================== */
+
+.sim-body {
+  max-width: 74ch;
+  margin-bottom: 44px;
+  display: grid;
+  gap: 17px;
+}
+.sim-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.8;
+}
+.sim-body strong { color: var(--text); }
+
+.sim-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sim-stat {
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, rgba(17,25,37,.94), rgba(8,12,18,.95));
+}
+.sim-stat b {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(2.6rem, 6vw, 3.5rem);
+  font-weight: 800;
+  line-height: .9;
+  letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
+}
+.sim-stat.bad b { color: var(--muted-2); }
+.sim-stat.good b { color: var(--orange-2); }
+.sim-stat > span { font-size: var(--fs-xs); font-weight: 700; }
+.sim-stat.bad > span { color: var(--muted); }
+.sim-track {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.sim-track i { display: block; height: 100%; border-radius: 3px; }
+.sim-stat.bad .sim-track i { width: 67%; background: var(--muted-2); }
+.sim-stat.good .sim-track i { width: 12%; background: var(--orange); }
+
+.sim-conditions {
+  margin-top: 18px;
+  padding: 26px 28px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+}
+.sim-conditions strong {
+  color: var(--muted);
+  font-size: var(--fs-3xs);
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sim-conditions p {
+  margin: 0;
+  max-width: 80ch;
+  color: var(--muted-2);
+  font-size: var(--fs-2xs);
+  line-height: 1.7;
+}
+
+.sim-cta { margin-top: 32px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.sim-legal { margin: 0; max-width: 72ch; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
+
+.compat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.compat-grid article {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, rgba(16,24,36,.94), rgba(8,12,18,.96));
+}
+.compat-grid article > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--green);
+  background: rgba(41,217,154,.1);
+  font-size: var(--fs-xs);
+  font-weight: 900;
+}
+.compat-grid strong { font-size: var(--fs-base); }
+.compat-grid p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+
+@media (max-width: 820px) {
+  .sim-duo, .compat-grid { grid-template-columns: 1fr; }
+  .sim-stat, .compat-grid article { padding: 22px; }
+  .sim-conditions { padding: 20px; }
 }
