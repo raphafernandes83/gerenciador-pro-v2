@@ -57,7 +57,9 @@ body {
     radial-gradient(circle at 78% 2%, rgba(255,122,26,.06), transparent 25%),
     radial-gradient(circle at 5% 42%, rgba(55,103,255,.1), transparent 28%),
     linear-gradient(180deg, #05070b 0%, #080c13 42%, #06080d 100%);
-  font-family: Inter, Arial, sans-serif;
+  /* --fonte-idioma entra na frente quando o idioma escolhido usa outro
+     alfabeto (bengali, chines, coreano); vazia nos demais casos. */
+  font-family: var(--fonte-idioma, Inter), Inter, Arial, sans-serif;
   text-rendering: optimizeLegibility;
 }
 
@@ -65,7 +67,7 @@ a { color: inherit; }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 img, svg { max-width: 100%; }
-h1, h2, h3, h4 { margin-top: 0; font-family: Manrope, Inter, sans-serif; }
+h1, h2, h3, h4 { margin-top: 0; font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif; }
 p { text-wrap: pretty; }
 /* folga = altura do header fixo (88px) + respiro */
 section { scroll-margin-top: 108px; }

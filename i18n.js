@@ -15,9 +15,9 @@
     { codigo: "es", nome: "Español", dir: "ltr", pronto: true },
     { codigo: "fr", nome: "Français", dir: "ltr", pronto: true },
     { codigo: "de", nome: "Deutsch", dir: "ltr", pronto: true },
-    { codigo: "bn", nome: "বাংলা", dir: "ltr", pronto: false, fonte: "Noto+Sans+Bengali" },
-    { codigo: "zh", nome: "中文", dir: "ltr", pronto: false, fonte: "Noto+Sans+SC" },
-    { codigo: "ko", nome: "한국어", dir: "ltr", pronto: false, fonte: "Noto+Sans+KR" },
+    { codigo: "bn", nome: "বাংলা", dir: "ltr", pronto: true, fonte: "Noto+Sans+Bengali" },
+    { codigo: "zh", nome: "中文", dir: "ltr", pronto: true, fonte: "Noto+Sans+SC" },
+    { codigo: "ko", nome: "한국어", dir: "ltr", pronto: true, fonte: "Noto+Sans+KR" },
   ];
   const CHAVE_ARMAZENAMENTO = "gp-idioma";
   const cache = new Map();
@@ -105,6 +105,7 @@
     aplicar(dic);
 
     const info = IDIOMAS.find(i => i.codigo === codigo);
+    garantirFonte(info);   // aqui e nao no clique: cobre tambem o idioma ja salvo
     document.documentElement.lang = codigo;
     document.documentElement.dir = info.dir;
 
@@ -161,7 +162,6 @@
         botao.appendChild(aviso);
       } else {
         botao.addEventListener("click", () => {
-          garantirFonte(info);
           definir(info.codigo);
           fechar({ devolverFoco: true });
         });
