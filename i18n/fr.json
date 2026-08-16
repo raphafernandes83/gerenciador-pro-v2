@@ -394,5 +394,6 @@
   "msg.falhaGenerica": "Nous n'avons pas pu finaliser l'inscription. Réessayez.",
   "msg.etapa": "Étape {n} sur 3 — {rotulo}",
   "attr.16": "Indicatif du pays",
-  "msg.enviando": "Envoi de l’inscription…"
+  "msg.enviando": "Envoi de l’inscription…",
+  "attr.17": "Changer de langue"
 }

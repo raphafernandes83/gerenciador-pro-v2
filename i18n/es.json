@@ -394,5 +394,6 @@
   "msg.falhaGenerica": "No pudimos completar el registro. Probá de nuevo.",
   "msg.etapa": "Paso {n} de 3 — {rotulo}",
   "attr.16": "Código de país",
-  "msg.enviando": "Enviando registro…"
+  "msg.enviando": "Enviando registro…",
+  "attr.17": "Cambiar idioma"
 }

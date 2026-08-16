@@ -394,5 +394,6 @@
   "msg.falhaGenerica": "Não conseguimos concluir o cadastro. Tente novamente.",
   "msg.etapa": "Etapa {n} de 3 — {rotulo}",
   "attr.16": "Código do país",
-  "msg.enviando": "Enviando cadastro…"
+  "msg.enviando": "Enviando cadastro…",
+  "attr.17": "Trocar idioma"
 }

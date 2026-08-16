@@ -394,5 +394,6 @@
   "msg.falhaGenerica": "등록을 완료하지 못했습니다. 다시 시도해 주세요.",
   "msg.etapa": "3단계 중 {n}단계 — {rotulo}",
   "attr.16": "국가 번호",
-  "msg.enviando": "등록을 보내는 중…"
+  "msg.enviando": "등록을 보내는 중…",
+  "attr.17": "언어 변경"
 }

@@ -1951,70 +1951,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 
 /* === Seletor de idioma ============================================= */
 
-.lang-switch { position: relative; flex: 0 0 auto; }
-.lang-toggle {
-  min-height: 40px;
-  padding: 0 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: var(--fs-2xs);
-  font-weight: 800;
-  letter-spacing: .06em;
-  transition: color .2s, border-color .2s, background .2s;
-}
-.lang-toggle:hover { color: var(--text); border-color: var(--blue); }
-.lang-toggle svg { flex: 0 0 auto; opacity: .85; }
-
-.lang-menu {
-  position: absolute;
-  top: calc(100% + 9px);
-  right: 0;
-  z-index: 220;
-  min-width: 172px;
-  padding: 7px;
-  display: grid;
-  gap: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background: #0d131c;
-  box-shadow: var(--shadow-md);
-}
-.lang-menu[hidden] { display: none; }
-.lang-option {
-  min-height: 38px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  text-align: left;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  transition: background .16s, color .16s;
-}
-.lang-option:hover { background: var(--surface-2); color: var(--text); }
-.lang-option.active { color: var(--text); background: rgba(86,183,255,.12); font-weight: 800; }
-
-@media (max-width: 1080px) {
-  .lang-menu { right: -6px; }
-}
-@media (max-width: 560px) {
-  .lang-toggle { min-height: 36px; padding: 0 10px; }
-  .lang-toggle .lang-current { display: none; }
-}
-.lang-option.pendente { cursor: default; opacity: .55; justify-content: space-between; gap: 12px; }
-.lang-option.pendente:hover { background: transparent; color: var(--muted); }
-.lang-option small { color: var(--muted-2); font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .06em; }
-
 /* Campo de telefone internacional */
 .phone-row { display: grid; grid-template-columns: auto 1fr; gap: 9px; }
 .phone-ddi {
@@ -2028,4 +1964,170 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 @media (max-width: 380px) {
   .phone-row { grid-template-columns: 1fr; }
   .phone-ddi { min-width: 0; }
+}
+
+/* === Seletor de idioma ============================================= */
+
+.lang-switch { position: relative; flex: 0 0 auto; }
+
+.lang-toggle {
+  min-height: 40px;
+  padding: 0 11px 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-2xs);
+  font-weight: 800;
+  letter-spacing: .06em;
+  transition: color .2s, border-color .2s, background .2s, transform .12s;
+}
+.lang-toggle:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-2); }
+.lang-toggle:active { transform: scale(.96); }
+.lang-toggle.aberto { color: var(--text); border-color: var(--blue); background: rgba(86,183,255,.08); }
+.lang-caret { transition: transform .22s cubic-bezier(.16,.8,.24,1); opacity: .7; }
+.lang-toggle.aberto .lang-caret { transform: rotate(180deg); }
+
+/* A bandeira é um SVG de 20x14 dentro de uma moldura arredondada. */
+.lang-flag {
+  width: 22px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: block;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 1px 3px rgba(0,0,0,.45);
+}
+.lang-flag svg { display: block; width: 100%; height: 100%; }
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 220;
+  min-width: 208px;
+  padding: 7px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  background: rgba(14,20,30,.97);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(0,0,0,.4);
+  transform-origin: top right;
+  animation: langAbrir .2s cubic-bezier(.16,.8,.24,1);
+}
+.lang-menu[hidden] { display: none; }
+@keyframes langAbrir {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.lang-option {
+  min-height: 40px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 22px 1fr 14px;
+  align-items: center;
+  gap: 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  transition: background .16s, color .16s;
+}
+.lang-option:hover:not([disabled]) { background: var(--surface-2); color: var(--text); }
+.lang-option:active:not([disabled]) { background: rgba(86,183,255,.12); }
+.lang-option[aria-current="true"] { color: var(--text); background: rgba(86,183,255,.1); }
+.lang-check { opacity: 0; color: var(--blue); font-weight: 900; transition: opacity .16s; }
+.lang-option[aria-current="true"] .lang-check { opacity: 1; }
+.lang-option[disabled] { cursor: default; opacity: .45; }
+.lang-option small {
+  grid-column: 2 / -1;
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1080px) {
+  .lang-toggle .lang-current { display: none; }
+  .lang-toggle { padding: 0 9px; }
+}
+
+/* === Resposta ao toque ============================================= */
+/* O site tinha 24 estados :hover e nenhum :active. No celular não existe
+   hover, então tocar um botão não devolvia nada — a principal razão de a
+   interface parecer travada no dedo. */
+
+.button:active,
+.header-link:active,
+.submit-button:not(:disabled):active,
+.floating-cta-btn:active,
+.step-next:active,
+.step-back:active { transform: scale(.975); }
+
+.interest-tab:active,
+.exclusive-card:active,
+.intel-card:active,
+.participation-grid article:active,
+.session-cards article:active { transform: scale(.99); }
+
+.filter-pills span:active,
+.lock-options span:active,
+.mini-actions span:active,
+.status-chip:active { transform: scale(.94); }
+
+.scroll-top:active { transform: scale(.9); }
+.hamburger-btn:active { transform: scale(.92); }
+.showcase-buttons button:active { transform: translateY(3px); box-shadow: 0 4px 0 #05080c, 0 8px 14px rgba(0,0,0,.45); }
+
+/* Transição curta o bastante para o toque parecer instantâneo. */
+.button, .header-link, .submit-button, .floating-cta-btn, .step-next, .step-back,
+.interest-tab, .exclusive-card, .intel-card, .participation-grid article,
+.session-cards article, .filter-pills span, .lock-options span, .mini-actions span,
+.status-chip, .scroll-top, .hamburger-btn, .showcase-buttons button {
+  transition-duration: .18s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* === Respiração ==================================================== */
+
+/* O indicador do painel diz "sistema pronto" e nunca se mexia. */
+.online-badge i { animation: respirar 2.6s ease-in-out infinite; }
+@keyframes respirar {
+  0%, 100% { box-shadow: 0 0 10px rgba(41,217,154,.55); opacity: .85; }
+  50%      { box-shadow: 0 0 18px rgba(41,217,154,.9);  opacity: 1; }
+}
+
+/* As barras da simulação crescem quando entram em tela. A largura final
+   fica no CSS, então sem JS — ou com movimento reduzido — elas já nascem
+   corretas e nada anima. */
+.sim-track i { transition: width 1.1s cubic-bezier(.16,.8,.24,1); }
+
+/* Entrada do hero: escalonada, uma vez, no carregamento. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-copy > *, .command-center {
+    animation: entrar .7s cubic-bezier(.16,.8,.24,1) backwards;
+  }
+  .hero-copy > :nth-child(1) { animation-delay: .05s; }
+  .hero-copy > :nth-child(2) { animation-delay: .13s; }
+  .hero-copy > :nth-child(3) { animation-delay: .21s; }
+  .hero-copy > :nth-child(4) { animation-delay: .29s; }
+  .hero-copy > :nth-child(5) { animation-delay: .37s; }
+  .command-center { animation-delay: .3s; animation-duration: .9s; }
+}
+@keyframes entrar {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
 }

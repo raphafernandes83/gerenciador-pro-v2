@@ -7,7 +7,10 @@
   const targets = document.querySelectorAll(
     ".section-heading, .flow-intro, .operations-copy, .control-showcase, .separation-copy, " +
     ".session-cards > article, .boundaries-copy, .boundaries-grid > article, .participation-grid > article, " +
-    ".form-intro, .exclusive-card, .intel-card, .cta-strip, .statement-copy, .global-panel > *"
+    ".form-intro, .exclusive-card, .intel-card, .cta-strip, .statement-copy, .global-panel > *, " +
+    // As duas seções mais novas só tinham o cabeçalho revelado; o corpo,
+    // os números e o bloco de condições entravam secos.
+    ".sim-body, .sim-duo > article, .sim-conditions, .sim-cta, .compat-grid > article"
   );
 
   // If the page loaded on a URL fragment (e.g. someone shared a #cadastro or
@@ -54,6 +57,39 @@
     el.style.transitionDelay = `${Math.min((index % 6) * 60, 240)}ms`;
     observer.observe(el);
   });
+
+  /* Os dois números da simulação são o argumento da página, e eram os
+     únicos que não se mexiam — enquanto os números menores do hero já
+     faziam contagem. A largura final das barras fica no CSS, então sem
+     JavaScript, ou com movimento reduzido (este arquivo nem chega aqui),
+     elas já nascem corretas e nada anima. */
+  const duo = document.querySelector(".sim-duo");
+  if (duo) {
+    const barras = [...duo.querySelectorAll(".sim-track i")];
+    const larguras = barras.map(el => getComputedStyle(el).width);
+    barras.forEach(el => { el.style.width = "0px"; });
+
+    const contar = (el, alvo) => {
+      const inicio = performance.now();
+      const passo = agora => {
+        const t = Math.min((agora - inicio) / 1300, 1);
+        el.textContent = Math.round(alvo * (1 - Math.pow(1 - t, 3))) + "%";
+        if (t < 1) requestAnimationFrame(passo);
+      };
+      requestAnimationFrame(passo);
+    };
+
+    const obsDuo = new IntersectionObserver(([entrada]) => {
+      if (!entrada.isIntersecting) return;
+      obsDuo.disconnect();
+      duo.querySelectorAll(".sim-stat b").forEach(el => {
+        const alvo = parseInt(el.textContent, 10);
+        if (Number.isFinite(alvo)) { el.textContent = "0%"; contar(el, alvo); }
+      });
+      barras.forEach((el, i) => { el.style.width = larguras[i]; });
+    }, { threshold: 0.45 });
+    obsDuo.observe(duo);
+  }
 
   // Fade hint on the comparison table only while there is more to scroll.
   const comparisonShell = document.querySelector(".comparison-shell");

@@ -394,5 +394,6 @@
   "msg.falhaGenerica": "Die Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.",
   "msg.etapa": "Schritt {n} von 3 — {rotulo}",
   "attr.16": "Ländervorwahl",
-  "msg.enviando": "Anmeldung wird gesendet…"
+  "msg.enviando": "Anmeldung wird gesendet…",
+  "attr.17": "Sprache wechseln"
 }
