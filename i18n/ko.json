@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "등록이 저장되고 확인되었습니다. 중요한 소식이 있으면 알려드리겠습니다.",
   "msg.falhaGenerica": "등록을 완료하지 못했습니다. 다시 시도해 주세요.",
   "msg.etapa": "3단계 중 {n}단계 — {rotulo}",
-  "attr.16": "국가 번호"
+  "attr.16": "국가 번호",
+  "msg.enviando": "등록을 보내는 중…"
 }

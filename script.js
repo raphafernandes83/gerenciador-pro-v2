@@ -14,7 +14,9 @@
   const channelInput = document.getElementById("canal_divulgacao");
   const submitButton = document.getElementById("submit-button");
   const submitButtonLabel = submitButton.querySelector(".button-label");
-  const submitButtonIdleText = submitButtonLabel.textContent;
+  // Lido na hora, nao no carregamento: guardar o texto inicial congelava o
+  // rotulo no idioma de origem (ingles) e o restaurava por cima da traducao.
+  const submitButtonIdleText = () => T("cadastro.88", "Join the official list");
   const notice = document.getElementById("form-notice");
   const successState = document.getElementById("success-state");
   const observation = document.getElementById("observacao");
@@ -506,7 +508,7 @@
     submitButton.disabled = true;
     submitButton.classList.add("loading");
     submitButton.setAttribute("aria-busy", "true");
-    submitButtonLabel.textContent = "Enviando cadastro…";
+    submitButtonLabel.textContent = T("msg.enviando", "Sending registration…");
 
     try {
       const result = await submitThroughConfirmedIframe();
@@ -542,7 +544,7 @@
       submitButton.disabled = false;
       submitButton.classList.remove("loading");
       submitButton.removeAttribute("aria-busy");
-      submitButtonLabel.textContent = submitButtonIdleText;
+      submitButtonLabel.textContent = submitButtonIdleText();
     }
   });
 

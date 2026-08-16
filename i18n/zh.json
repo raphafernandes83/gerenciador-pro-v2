@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "您的登记已保存并确认。有重要消息时我们会通知您。",
   "msg.falhaGenerica": "未能完成登记，请重试。",
   "msg.etapa": "第 {n} 步，共 3 步 — {rotulo}",
-  "attr.16": "国家或地区区号"
+  "attr.16": "国家或地区区号",
+  "msg.enviando": "正在提交登记…"
 }

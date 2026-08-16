@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "Seu cadastro foi gravado e confirmado pela planilha. Avisaremos você quando houver novidades importantes.",
   "msg.falhaGenerica": "Não conseguimos concluir o cadastro. Tente novamente.",
   "msg.etapa": "Etapa {n} de 3 — {rotulo}",
-  "attr.16": "Código do país"
+  "attr.16": "Código do país",
+  "msg.enviando": "Enviando cadastro…"
 }

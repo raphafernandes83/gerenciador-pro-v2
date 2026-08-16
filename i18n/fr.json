@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "Votre inscription a été enregistrée et confirmée. Nous vous préviendrons dès qu'il y aura du nouveau.",
   "msg.falhaGenerica": "Nous n'avons pas pu finaliser l'inscription. Réessayez.",
   "msg.etapa": "Étape {n} sur 3 — {rotulo}",
-  "attr.16": "Indicatif du pays"
+  "attr.16": "Indicatif du pays",
+  "msg.enviando": "Envoi de l’inscription…"
 }

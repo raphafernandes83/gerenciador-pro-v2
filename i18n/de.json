@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "Ihre Anmeldung wurde gespeichert und bestätigt. Wir melden uns, sobald es Wichtiges gibt.",
   "msg.falhaGenerica": "Die Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.",
   "msg.etapa": "Schritt {n} von 3 — {rotulo}",
-  "attr.16": "Ländervorwahl"
+  "attr.16": "Ländervorwahl",
+  "msg.enviando": "Anmeldung wird gesendet…"
 }

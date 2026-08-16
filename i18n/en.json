@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "Your registration was saved and confirmed. We will let you know when there is important news.",
   "msg.falhaGenerica": "We couldn't complete your registration. Please try again.",
   "msg.etapa": "Step {n} of 3 — {rotulo}",
-  "attr.16": "Country calling code"
+  "attr.16": "Country calling code",
+  "msg.enviando": "Sending registration…"
 }

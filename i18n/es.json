@@ -393,5 +393,6 @@
   "msg.usuarioTexto": "Tu registro quedó guardado y confirmado. Te avisaremos cuando haya novedades importantes.",
   "msg.falhaGenerica": "No pudimos completar el registro. Probá de nuevo.",
   "msg.etapa": "Paso {n} de 3 — {rotulo}",
-  "attr.16": "Código de país"
+  "attr.16": "Código de país",
+  "msg.enviando": "Enviando registro…"
 }
