@@ -648,6 +648,7 @@ section { scroll-margin-top: 108px; }
 
 .comparison-section,
 .simulation-section,
+.prova-section,
 .compat-section,
 .exclusive-section,
 .flow-section,
@@ -2509,4 +2510,203 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 @media (max-width: 700px) {
   .sim-significa { padding: 26px 22px; }
   .sim-placar { grid-template-columns: 1fr; }
+}
+
+/* === A matemática por trás ========================================= */
+
+.prova-section { display: grid; gap: 24px; }
+.prova-abertura, .prova-bloco, .prova-motor, .prova-fecho { display: grid; gap: 16px; max-width: 78ch; }
+.prova-abertura p, .prova-bloco p, .prova-motor p, .prova-fecho p {
+  margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.75;
+}
+.prova-bloco strong, .prova-fecho strong, .prova-motor strong { color: var(--text); }
+
+.prova-section code {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: Consolas, ui-monospace, monospace;
+  font-size: .92em;
+  white-space: nowrap;
+}
+
+/* A conta da moeda, em linha */
+.prova-conta {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+  font-family: Manrope, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.prova-conta span { font-size: var(--fs-lg); font-weight: 700; color: var(--muted); }
+.prova-conta em { font-style: normal; color: var(--muted-2); font-size: var(--fs-base); }
+.prova-conta strong { font-size: var(--fs-xl); font-weight: 800; color: var(--orange-2); letter-spacing: -.03em; }
+
+/* O número que surpreende */
+.prova-destaque {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 28px;
+  align-items: center;
+  padding: 32px 34px;
+  border: 1px solid rgba(255,122,26,.3);
+  border-radius: 23px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(255,122,26,.11), transparent 45%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+  transition: transform .24s cubic-bezier(.16,.8,.24,1), border-color .24s, box-shadow .24s;
+}
+.prova-destaque:hover { transform: translateY(-4px); border-color: rgba(255,122,26,.5); box-shadow: var(--shadow-md); }
+.prova-destaque b {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(2.6rem, 6vw, 4rem);
+  font-weight: 800; line-height: 1; letter-spacing: -.05em;
+  color: var(--orange-2); font-variant-numeric: tabular-nums;
+}
+.prova-destaque strong { display: block; font-size: var(--fs-md); margin-bottom: 8px; }
+.prova-destaque span { color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+
+/* 175 de 210 */
+.prova-fracao {
+  justify-self: start;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 24px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+}
+.prova-fracao b {
+  font-family: Manrope, sans-serif; font-size: var(--fs-2xl); font-weight: 800;
+  letter-spacing: -.04em; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.prova-fracao span { color: var(--muted-2); font-size: var(--fs-sm); }
+.prova-fracao em { font-style: normal; color: var(--muted); font-size: var(--fs-xs); }
+.prova-remate { color: var(--text-2) !important; font-size: var(--fs-base) !important; }
+
+.prova-titulo {
+  margin: 14px 0 0;
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  letter-spacing: -.025em;
+}
+
+/* As sequências em fichas */
+.seq-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+.seq-card {
+  padding: 26px 24px;
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, var(--card-1), var(--card-2));
+  transition: transform .24s cubic-bezier(.16,.8,.24,1), border-color .24s, box-shadow .24s;
+}
+.seq-card:hover { transform: translateY(-5px); border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+.seq-card.destaque { border-color: rgba(255,122,26,.32); }
+.seq-card.destaque:hover { border-color: rgba(255,122,26,.55); }
+.seq-rotulo {
+  color: var(--muted-2); font-size: var(--fs-3xs); font-weight: 900;
+  letter-spacing: .11em; text-transform: uppercase;
+}
+.seq-card p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+
+.seq-fichas { display: flex; flex-wrap: wrap; gap: 5px; }
+.seq-fichas i {
+  width: 27px; height: 27px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  font-style: normal; font-size: var(--fs-3xs); font-weight: 900;
+  transition: transform .2s;
+}
+.seq-fichas i.w { color: var(--green-text); background: rgba(41,217,154,.14); border: 1px solid rgba(41,217,154,.3); }
+.seq-fichas i.l { color: var(--red-text); background: rgba(255,102,121,.1); border: 1px solid rgba(255,102,121,.24); }
+.seq-card:hover .seq-fichas i.w { transform: translateY(-3px); }
+
+.seq-valor {
+  margin-top: auto;
+  font-family: Manrope, sans-serif; font-size: var(--fs-xl); font-weight: 800;
+  letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+}
+.seq-valor.negativo { color: var(--red); }
+.seq-valor.positivo { color: var(--orange-2); font-size: var(--fs-md); line-height: 1.3; }
+
+/* Os fatores do cálculo */
+.prova-legenda { color: var(--text-2); font-size: var(--fs-sm); font-weight: 700; }
+.prova-fatores {
+  margin: 0; padding: 0; list-style: none;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.prova-fatores li {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  transition: border-color .22s, background .22s, transform .22s;
+}
+.prova-fatores li:hover { border-color: var(--line-strong); background: var(--surface-2); transform: translateY(-2px); }
+
+.prova-nota {
+  display: grid; gap: 14px;
+  padding: 26px 30px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--orange);
+  border-radius: 4px 21px 21px 4px;
+  background: var(--surface);
+}
+.prova-nota p { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.7; }
+.prova-sem { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+.prova-sem li { position: relative; padding-left: 24px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+.prova-sem li::before { content: "\2014"; position: absolute; left: 0; color: var(--red); font-weight: 900; }
+
+/* A tabela dos três universos */
+.prova-tabela-caixa {
+  overflow-x: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 21px;
+  background: linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+.prova-tabela { width: 100%; min-width: 560px; border-collapse: collapse; }
+.prova-tabela th {
+  padding: 18px 22px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted-2);
+  font-size: var(--fs-3xs); font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
+}
+.prova-tabela td {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+.prova-tabela tbody tr { transition: background .2s; }
+.prova-tabela tbody tr:hover { background: var(--surface); }
+.prova-tabela tbody tr:last-child td { border-bottom: 0; }
+.prova-tabela td:first-child { font-weight: 800; color: var(--text); }
+.prova-tabela td span { color: var(--muted-2); font-size: var(--fs-xs); }
+.prova-tabela tr.destaque td { background: rgba(255,122,26,.07); }
+.prova-tabela tr.destaque td:first-child,
+.prova-tabela tr.destaque td:nth-child(2) { color: var(--orange-2); font-weight: 800; }
+
+.prova-frase {
+  color: var(--text) !important;
+  font-family: Manrope, Inter, sans-serif;
+  font-size: clamp(1.25rem, 2.4vw, 1.7rem) !important;
+  font-weight: 700; line-height: 1.35 !important; letter-spacing: -.025em;
+}
+
+@media (max-width: 900px) {
+  .seq-grid, .prova-fatores { grid-template-columns: 1fr; }
+  .prova-destaque { grid-template-columns: 1fr; gap: 16px; padding: 26px 22px; }
+  .prova-nota { padding: 22px; }
 }

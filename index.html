@@ -332,6 +332,124 @@
       </div>
     </section>
 
+
+    <section class="prova-section" id="prova">
+      <div class="section-heading left">
+        <span class="eyebrow" data-i18n="prova.01"><i></i> The maths behind it</span>
+        <h2 data-i18n="prova.02">Are two wins in a row really that hard?</h2>
+      </div>
+
+      <div class="prova-abertura">
+        <p data-i18n="prova.03">Imagine you have to call the result of two coin tosses. The chance of getting the first one right is 50%. The chance of also getting the second one right is 50%.</p>
+        <div class="prova-conta" aria-hidden="true">
+          <span>50%</span><em>×</em><span>50%</span><em>=</em><strong>25%</strong>
+        </div>
+        <p data-i18n="prova.04">That is when you only have two attempts.</p>
+        <p data-i18n="prova.05">But in a block of ten attempts there are nine different positions where a <code>W — W</code> sequence can appear. Because those possibilities overlap, the correct calculation has to consider all 1,024 possible sequences.</p>
+      </div>
+
+      <div class="prova-destaque">
+        <b>85,94%</b>
+        <div>
+          <strong data-i18n="prova.06">In 85.94% of the sequences at least one <code>W — W</code> appears</strong>
+          <span data-i18n="prova.07">This happens in a completely random laboratory, with no chart analysis, no strategy and no edge over the result — with nothing but the same hit probability as a coin.</span>
+        </div>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.08">Now let us consider an even stricter scenario: a block that ended with exactly four wins and six losses. There are 210 different ways to distribute those four Wins across the ten operations.</p>
+        <div class="prova-fracao">
+          <b>175</b><span>de</span><b>210</b>
+          <em data-i18n="prova.09">distributions contain at least one <code>W — W</code></em>
+        </div>
+        <p class="prova-remate" data-i18n="prova.10">Even hitting only 4 out of 10, <strong>83.33% of the distributions contain two wins in a row.</strong></p>
+      </div>
+
+      <div class="prova-motor">
+        <p data-i18n="prova.11">It is exactly this mathematical event that Gerenciador PRO turns into a financial goal. The system does not create the wins and does not predict the market. Its calculation engine works out every new entry taking into account the payout, the accumulated deficit, the starting hand, the size of the bankroll, the stop-loss and the cycle limit.</p>
+        <p data-i18n="prova.12">So when the smallest necessary event happens — two wins in a row — and the setup has enough room to carry the earlier steps, the pair is calculated to recover the accumulated deficit and close the cycle at the planned result.</p>
+      </div>
+
+      <h3 class="prova-titulo" data-i18n="prova.13">See what happens without management</h3>
+
+      <div class="seq-grid">
+        <article class="seq-card">
+          <span class="seq-rotulo" data-i18n="prova.14">Fixed $2 entry · 87% payout</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="w">W</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="l">L</i><i class="w">W</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.15">That was 5 Wins and 5 Losses. The trader got half the operations right and still finished with:</p>
+          <b class="seq-valor negativo">−$1,30</b>
+        </article>
+
+        <article class="seq-card">
+          <span class="seq-rotulo" data-i18n="prova.16">Same rule, a worse sequence</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.17">That was 8 Losses and only 2 Wins. Keeping the fixed $2 entry and the 87% payout, the result would be:</p>
+          <b class="seq-valor negativo">−$12,52</b>
+        </article>
+
+        <article class="seq-card destaque">
+          <span class="seq-rotulo" data-i18n="prova.18">The same sequence, with Gerenciador PRO</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.19">The sequence has not changed. It is still eight Losses and only two Wins. What changes completely is how the money is distributed through the cycle.</p>
+          <b class="seq-valor positivo" data-i18n="prova.20">Full recovery of the cycle's loss</b>
+        </article>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.21">Instead of keeping fixed entries, which would leave a $12.52 loss, or resorting to aggressive and uncontrolled progressions, the calculation engine of Gerenciador PRO works out the value of each step in advance.</p>
+        <p data-i18n="prova.22">The Losses are absorbed as small planned and controlled losses. The system tracks the accumulated deficit and spreads the recovery across the next entries, without depending on a single desperate entry to try to save the whole bankroll.</p>
+        <span class="prova-legenda" data-i18n="prova.23">Every new value is calculated taking into account:</span>
+        <ul class="prova-fatores">
+          <li data-i18n="prova.24">the payout</li>
+          <li data-i18n="prova.25">the accumulated deficit</li>
+          <li data-i18n="prova.26">the starting hand</li>
+          <li data-i18n="prova.27">the size of the bankroll</li>
+          <li data-i18n="prova.28">the stop-loss</li>
+          <li data-i18n="prova.29">the maximum number of supported steps</li>
+        </ul>
+        <p data-i18n="prova.30">The goal is to carry the bankroll through the losing sequence with enough room to reach the event that actually closes the cycle: two wins in a row. When the <code>W — W</code> finally happens within the limit the setup supports, those two Wins carry the financial weight needed to offset every loss accumulated in the earlier steps.</p>
+      </div>
+
+      <div class="prova-nota">
+        <p data-i18n="prova.31">The two Wins did not erase eight Losses by magic. The recovery was possible because Gerenciador PRO prepared every entry mathematically from the start.</p>
+        <ul class="prova-sem">
+          <li data-i18n="prova.32">Without doubling values indiscriminately after every Loss.</li>
+          <li data-i18n="prova.33">Without concentrating the whole recovery into a single extremely risky operation.</li>
+          <li data-i18n="prova.34">Without letting desperation decide the next value.</li>
+        </ul>
+      </div>
+
+      <h3 class="prova-titulo" data-i18n="prova.35">Now imagine this tool in the hands of a trader with a 60% hit rate</h3>
+
+      <div class="prova-tabela-caixa">
+        <table class="prova-tabela">
+          <thead>
+            <tr>
+              <th data-i18n="prova.36">Hit rate</th>
+              <th data-i18n="prova.37">Chance of a <code>W — W</code> appearing in 10 operations</th>
+              <th data-i18n="prova.38">Distributions containing <code>W — W</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>40%</td><td>71,00%</td><td>175 <span>/ 210</span></td></tr>
+            <tr><td>50%</td><td>85,94%</td><td>246 <span>/ 252</span></td></tr>
+            <tr class="destaque"><td>60%</td><td>94,67%</td><td>210 <span>/ 210</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.39">And when a block ends with exactly 6 Wins and 4 Losses, the result is even more striking. There are 210 different ways to distribute those six Wins across the ten operations. Every single one of them contains at least two wins in a row.</p>
+        <p class="prova-remate" data-i18n="prova.40"><strong>This happens because it is mathematically impossible to distribute six Wins across ten positions while keeping them all apart.</strong></p>
+      </div>
+
+      <div class="prova-fecho">
+        <p data-i18n="prova.41">If Gerenciador PRO can prepare the recovery even in a disastrous cycle with eight Losses and only two Wins at the end, imagine the potential of this tool in the hands of a trader who already holds a 60% hit rate.</p>
+        <p class="prova-frase" data-i18n="prova.42">You do not need to win most of the operations to recover a cycle. You need to be mathematically prepared for when the two wins in a row show up.</p>
+        <p data-i18n="prova.43">Gerenciador PRO does not promise you will never have Losses. It does something far smarter: <strong>it prepares your bankroll to take full advantage of the Wins when they finally meet.</strong></p>
+      </div>
+    </section>
+
     <section class="exclusive-section" id="diferenciais">
       <div class="section-heading">
         <span class="eyebrow" data-i18n="diferenciais.01"><i></i> Technology that changes the experience</span>
@@ -770,7 +888,7 @@
 
             <div class="form-grid two-columns">
               <div class="field">
-                <label for="email" data-i18n="cadastro.27">Email (optional)</label>
+                <label for="email" data-i18n="cadastro.27">Email <em>*</em></label>
                 <input id="email" name="email" type="email" required="" inputmode="email" placeholder="you@example.com" autocomplete="email" aria-describedby="email-error" data-i18n-attr="placeholder:attr.11">
                 <span class="field-error" id="email-error" aria-live="polite"></span>
               </div>
