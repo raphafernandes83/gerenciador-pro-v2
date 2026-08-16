@@ -57,7 +57,9 @@ body {
     radial-gradient(circle at 78% 2%, rgba(255,122,26,.06), transparent 25%),
     radial-gradient(circle at 5% 42%, rgba(55,103,255,.1), transparent 28%),
     linear-gradient(180deg, #05070b 0%, #080c13 42%, #06080d 100%);
-  font-family: Inter, Arial, sans-serif;
+  /* --fonte-idioma entra na frente quando o idioma escolhido usa outro
+     alfabeto (bengali, chines, coreano); vazia nos demais casos. */
+  font-family: var(--fonte-idioma, Inter), Inter, Arial, sans-serif;
   text-rendering: optimizeLegibility;
 }
 
@@ -65,7 +67,7 @@ a { color: inherit; }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 img, svg { max-width: 100%; }
-h1, h2, h3, h4 { margin-top: 0; font-family: Manrope, Inter, sans-serif; }
+h1, h2, h3, h4 { margin-top: 0; font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif; }
 p { text-wrap: pretty; }
 /* folga = altura do header fixo (88px) + respiro */
 section { scroll-margin-top: 108px; }
@@ -539,6 +541,8 @@ section { scroll-margin-top: 108px; }
 }
 
 .comparison-section,
+.simulation-section,
+.compat-section,
 .exclusive-section,
 .flow-section,
 .operations-section,
@@ -1837,4 +1841,191 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .header-link:hover,
   .floating-cta-btn:hover,
   .interest-tab:hover { transform: none; }
+}
+
+/* === Simulação de risco e compatibilidade ========================== */
+
+.sim-body {
+  max-width: 74ch;
+  margin-bottom: 44px;
+  display: grid;
+  gap: 17px;
+}
+.sim-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.8;
+}
+.sim-body strong { color: var(--text); }
+
+.sim-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sim-stat {
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, rgba(17,25,37,.94), rgba(8,12,18,.95));
+}
+.sim-stat b {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(2.6rem, 6vw, 3.5rem);
+  font-weight: 800;
+  line-height: .9;
+  letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
+}
+.sim-stat.bad b { color: var(--muted-2); }
+.sim-stat.good b { color: var(--orange-2); }
+.sim-stat > span { font-size: var(--fs-xs); font-weight: 700; }
+.sim-stat.bad > span { color: var(--muted); }
+.sim-track {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.sim-track i { display: block; height: 100%; border-radius: 3px; }
+.sim-stat.bad .sim-track i { width: 35.4%; background: var(--muted-2); }
+.sim-stat.good .sim-track i { width: 49.3%; background: var(--orange); }
+
+.sim-conditions {
+  margin-top: 18px;
+  padding: 26px 28px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+}
+.sim-conditions strong {
+  color: var(--muted);
+  font-size: var(--fs-3xs);
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sim-conditions p {
+  margin: 0;
+  max-width: 80ch;
+  color: var(--muted-2);
+  font-size: var(--fs-2xs);
+  line-height: 1.7;
+}
+
+.sim-cta { margin-top: 32px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.sim-legal { margin: 0; max-width: 72ch; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
+
+.compat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.compat-grid article {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, rgba(16,24,36,.94), rgba(8,12,18,.96));
+}
+.compat-grid article > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--green);
+  background: rgba(41,217,154,.1);
+  font-size: var(--fs-xs);
+  font-weight: 900;
+}
+.compat-grid strong { font-size: var(--fs-base); }
+.compat-grid p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+
+@media (max-width: 820px) {
+  .sim-duo, .compat-grid { grid-template-columns: 1fr; }
+  .sim-stat, .compat-grid article { padding: 22px; }
+  .sim-conditions { padding: 20px; }
+}
+
+/* === Seletor de idioma ============================================= */
+
+.lang-switch { position: relative; flex: 0 0 auto; }
+.lang-toggle {
+  min-height: 40px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-2xs);
+  font-weight: 800;
+  letter-spacing: .06em;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.lang-toggle:hover { color: var(--text); border-color: var(--blue); }
+.lang-toggle svg { flex: 0 0 auto; opacity: .85; }
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 220;
+  min-width: 172px;
+  padding: 7px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #0d131c;
+  box-shadow: var(--shadow-md);
+}
+.lang-menu[hidden] { display: none; }
+.lang-option {
+  min-height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition: background .16s, color .16s;
+}
+.lang-option:hover { background: var(--surface-2); color: var(--text); }
+.lang-option.active { color: var(--text); background: rgba(86,183,255,.12); font-weight: 800; }
+
+@media (max-width: 1080px) {
+  .lang-menu { right: -6px; }
+}
+@media (max-width: 560px) {
+  .lang-toggle { min-height: 36px; padding: 0 10px; }
+  .lang-toggle .lang-current { display: none; }
+}
+.lang-option.pendente { cursor: default; opacity: .55; justify-content: space-between; gap: 12px; }
+.lang-option.pendente:hover { background: transparent; color: var(--muted); }
+.lang-option small { color: var(--muted-2); font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .06em; }
+
+/* Campo de telefone internacional */
+.phone-row { display: grid; grid-template-columns: auto 1fr; gap: 9px; }
+.phone-ddi {
+  width: auto;
+  min-width: 108px;
+  padding: 0 10px;
+  height: 48px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+@media (max-width: 380px) {
+  .phone-row { grid-template-columns: 1fr; }
+  .phone-ddi { min-width: 0; }
 }
