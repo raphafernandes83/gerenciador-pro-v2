@@ -10,7 +10,7 @@
     ".form-intro, .exclusive-card, .intel-card, .cta-strip, .statement-copy, .global-panel > *, " +
     // As duas seções mais novas só tinham o cabeçalho revelado; o corpo,
     // os números e o bloco de condições entravam secos.
-    ".sim-lead, .sim-nota, .sim-duo > article, .sim-conditions, .sim-cta, .compat-grid > article, " +
+    ".sim-lead, .sim-nota, .sim-significa, .sim-duo > article, .sim-conditions, .sim-cta, .compat-grid > article, " +
     // Nove blocos ficavam de fora e entravam secos: o mock do produto, a
     // tabela comparativa, o quadro de fluxo, o formulário e o aviso final.
     ".command-center, .comparison-shell, .comparison-note, .flow-board, " +

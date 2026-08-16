@@ -2390,8 +2390,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   color: var(--orange-2);
   font-variant-numeric: tabular-nums;
 }
-.sim-passos article:nth-child(2) .sim-num { color: var(--blue); }
-.sim-passos article:nth-child(3) .sim-num { color: var(--red); }
+/* A cor acompanha o papel de cada numero: o custo, o problema, a saida. */
+.sim-passos article:nth-child(1) .sim-num { color: var(--yellow-text); }
+.sim-passos article:nth-child(2) .sim-num { color: var(--red); }
+.sim-passos article:nth-child(3) .sim-num { color: var(--orange-2); }
+.sim-passos article:nth-child(3) { border-color: rgba(255,122,26,.28); }
 .sim-passos strong { font-size: var(--fs-base); letter-spacing: -.01em; }
 .sim-passos p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.65; }
 
@@ -2442,4 +2445,68 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
    que o cabeçalho ganhou os botões de tema e idioma. */
 @media (max-width: 900px) {
   .header-nav { display: none; }
+}
+
+/* === "O que isso significa" ========================================
+   O trecho tecnico entrega numeros; este bloco traduz o que eles
+   valem para a pessoa, em uma frase. */
+.sim-significa {
+  margin: 26px 0;
+  padding: 34px 34px 30px;
+  display: grid;
+  gap: 18px;
+  border: 1px solid rgba(255,122,26,.3);
+  border-radius: 23px;
+  background:
+    radial-gradient(circle at 88% 6%, rgba(255,122,26,.1), transparent 40%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+.sim-selo {
+  justify-self: start;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(255,122,26,.13);
+  color: var(--orange-2);
+  font-size: var(--fs-3xs);
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.sim-frase {
+  margin: 0;
+  max-width: 26ch;
+  font-family: Manrope, Inter, sans-serif;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -.03em;
+}
+.sim-frase strong { color: var(--orange-2); }
+.sim-placar { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 620px; }
+.sim-placar > div {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+}
+.sim-placar .destaque { border-color: rgba(255,122,26,.35); background: rgba(255,122,26,.07); }
+.sim-placar b {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(2.1rem, 4vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.05em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sim-placar .destaque b { color: var(--orange-2); }
+.sim-placar span { color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
+.sim-extra { margin: 0; max-width: 62ch; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.65; }
+
+@media (max-width: 700px) {
+  .sim-significa { padding: 26px 22px; }
+  .sim-placar { grid-template-columns: 1fr; }
 }
