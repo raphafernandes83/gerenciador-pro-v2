@@ -396,5 +396,8 @@
   "attr.16": "Country calling code",
   "msg.enviando": "Sending registration…",
   "attr.17": "Change language",
-  "attr.18": "Switch theme"
+  "attr.18": "Switch theme",
+  "simulacao.17": "The cost of coming back",
+  "simulacao.18": "What we measured",
+  "simulacao.19": "Where martingale stops"
 }

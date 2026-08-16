@@ -396,5 +396,8 @@
   "attr.16": "Indicatif du pays",
   "msg.enviando": "Envoi de l’inscription…",
   "attr.17": "Changer de langue",
-  "attr.18": "Changer de thème"
+  "attr.18": "Changer de thème",
+  "simulacao.17": "Le coût du retour",
+  "simulacao.18": "Ce que nous avons mesuré",
+  "simulacao.19": "Où la martingale s’arrête"
 }

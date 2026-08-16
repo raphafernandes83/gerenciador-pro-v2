@@ -14,8 +14,8 @@
   --surface: rgba(255,255,255,.035);
   --surface-2: rgba(255,255,255,.055);
   --text: #f7f8fb;
-  --muted: #aeb9c8;
-  --muted-2: #93a0b1;
+  --muted: #bcc6d4;
+  --muted-2: #a3aebd;
   --orange: #ff7a1a;
   --orange-2: #ff9e4d;
   --orange-3: #ffc17b;
@@ -30,12 +30,12 @@
   --tile-bg: rgba(255,255,255,.07);
   /* Escala tipográfica: 9 passos, piso de 12px. Rótulos em caixa alta usam
      --fs-3xs; texto corrido nunca desce de --fs-xs (14px). */
-  --fs-3xs: .75rem;
-  --fs-2xs: .8125rem;
-  --fs-xs: .875rem;
-  --fs-sm: .9375rem;
-  --fs-base: 1rem;
-  --fs-md: 1.125rem;
+  --fs-3xs: .8125rem;
+  --fs-2xs: .875rem;
+  --fs-xs: .9375rem;
+  --fs-sm: 1rem;
+  --fs-base: 1.0625rem;
+  --fs-md: 1.1875rem;
   --fs-lg: 1.3125rem;
   --fs-xl: 1.625rem;
   --fs-2xl: 2rem;
@@ -252,7 +252,8 @@ section { scroll-margin-top: 108px; }
   margin: 0 auto;
 }
 .site-header {
-  min-height: 88px;
+  min-height: 92px;
+  padding: 0 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1950,20 +1951,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 
 /* === Simulação de risco e compatibilidade ========================== */
 
-.sim-body {
-  max-width: 74ch;
-  margin-bottom: 44px;
-  display: grid;
-  gap: 17px;
-}
-.sim-body p {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: 1.8;
-}
-.sim-body strong { color: var(--text); }
-
 .sim-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .sim-stat {
   padding: 30px;
@@ -2284,8 +2271,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 [data-tema="claro"] .control-showcase {
   --text: #f7f8fb;
   --text-2: #ced6e0;
-  --muted: #aeb9c8;
-  --muted-2: #93a0b1;
+  --muted: #bcc6d4;
+  --muted-2: #a3aebd;
   --line: rgba(255,255,255,.14);
   --line-strong: rgba(255,255,255,.26);
   --surface: rgba(255,255,255,.035);
@@ -2319,4 +2306,140 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 [data-tema="claro"] .control-showcase {
   background: linear-gradient(155deg, var(--card-1), var(--card-2));
   border-color: rgba(255,255,255,.14);
+}
+
+/* === Cabeçalho: fundo de ponta a ponta, conteúdo centralizado ======
+   O fundo acompanhava a largura do conteúdo (1220px), então em telas
+   largas ele terminava no meio do nada e a marca encostava na própria
+   borda. Agora a faixa atravessa a tela e o respiro fica por dentro. */
+.site-header {
+  width: 100%;
+  max-width: none;
+  padding-inline: max(26px, calc((100vw - 1220px) / 2 + 26px));
+}
+
+/* === Cards: reação ao mouse ========================================
+   Cinco tipos não tinham hover nenhum, e os que tinham mudavam só a
+   cor da borda — imperceptível. Agora sobem, ganham borda e sombra. */
+.exclusive-card, .intel-card, .participation-grid article,
+.session-cards article, .boundaries-grid article,
+.compat-grid article, .sim-stat, .form-assurances article,
+.operations-points article, .flow-rules article {
+  transition: transform .24s cubic-bezier(.16,.8,.24,1),
+              border-color .24s, box-shadow .24s, background .24s;
+}
+.exclusive-card:hover, .intel-card:hover, .participation-grid article:hover,
+.session-cards article:hover, .boundaries-grid article:hover,
+.compat-grid article:hover, .sim-stat:hover, .form-assurances article:hover,
+.operations-points article:hover, .flow-rules article:hover {
+  transform: translateY(-5px);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+}
+/* O card da marca ganha a cor da marca ao passar o mouse. */
+.sim-stat.good:hover, .participation-grid article.featured:hover,
+.exclusive-card.hero-feature:hover { border-color: rgba(255,122,26,.45); }
+
+@media (hover: none) {
+  /* Em tela de toque não existe hover: nada sobe sozinho. */
+  .exclusive-card:hover, .intel-card:hover, .participation-grid article:hover,
+  .session-cards article:hover, .boundaries-grid article:hover,
+  .compat-grid article:hover, .sim-stat:hover, .form-assurances article:hover,
+  .operations-points article:hover, .flow-rules article:hover {
+    transform: none; box-shadow: none;
+  }
+}
+
+/* === Simulação em passos ===========================================
+   Eram 6 parágrafos e 276 palavras corridas — 544px de texto sem
+   respiro. Agora a mesma informação vira três cards com um número
+   grande cada, que é o que a pessoa lê primeiro ao passar o olho. */
+
+.sim-lead {
+  max-width: 62ch;
+  margin: 0 0 40px;
+  color: var(--text);
+  font-family: Manrope, Inter, sans-serif;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: -.015em;
+}
+
+.sim-passos {
+  margin-bottom: 22px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+.sim-passos article {
+  padding: 30px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+.sim-num {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(1.9rem, 3.4vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.045em;
+  color: var(--orange-2);
+  font-variant-numeric: tabular-nums;
+}
+.sim-passos article:nth-child(2) .sim-num { color: var(--blue); }
+.sim-passos article:nth-child(3) .sim-num { color: var(--red); }
+.sim-passos strong { font-size: var(--fs-base); letter-spacing: -.01em; }
+.sim-passos p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.65; }
+
+/* O fecho honesto ganha peso de citação, não de parágrafo perdido. */
+.sim-nota {
+  margin: 22px 0;
+  padding: 26px 30px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--orange);
+  border-radius: 4px 21px 21px 4px;
+  background: var(--surface);
+}
+.sim-nota p {
+  margin: 0;
+  max-width: 78ch;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+.sim-nota strong { color: var(--text); }
+
+@media (max-width: 900px) {
+  .sim-passos { grid-template-columns: 1fr; }
+  .sim-passos article { padding: 24px 22px; }
+  .sim-nota { padding: 22px; }
+}
+
+/* O cabeçalho ganhou dois botões (tema e idioma) e deixou de caber em
+   telas estreitas — a página passou a rolar na horizontal. Aqui ele
+   encolhe na medida certa, sem esconder nenhum controle. */
+@media (max-width: 900px) {
+  .site-header { gap: 12px; padding-inline: 16px; min-height: 76px; }
+}
+@media (max-width: 560px) {
+  .site-header { gap: 9px; padding-inline: 13px; }
+  .brand { gap: 9px; }
+  .brand-copy strong { font-size: var(--fs-sm); }
+  .tema-toggle, .hamburger-btn { width: 38px; height: 38px; }
+  .lang-toggle { min-height: 38px; padding: 0 7px; }
+  .lang-flag { width: 20px; height: 14px; }
+}
+
+/* Abaixo de 900px a navegação inteira sai do cabeçalho — inclusive o
+   "Quero participar", que o menu hambúrguer já oferece. Mantê-lo ali
+   custava 98px e era o que fazia a página rolar na horizontal depois
+   que o cabeçalho ganhou os botões de tema e idioma. */
+@media (max-width: 900px) {
+  .header-nav { display: none; }
 }
