@@ -395,5 +395,6 @@
   "msg.etapa": "Paso {n} de 3 — {rotulo}",
   "attr.16": "Código de país",
   "msg.enviando": "Enviando registro…",
-  "attr.17": "Cambiar idioma"
+  "attr.17": "Cambiar idioma",
+  "attr.18": "Cambiar tema"
 }

@@ -395,5 +395,6 @@
   "msg.etapa": "Étape {n} sur 3 — {rotulo}",
   "attr.16": "Indicatif du pays",
   "msg.enviando": "Envoi de l’inscription…",
-  "attr.17": "Changer de langue"
+  "attr.17": "Changer de langue",
+  "attr.18": "Changer de thème"
 }

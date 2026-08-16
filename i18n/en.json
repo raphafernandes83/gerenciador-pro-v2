@@ -395,5 +395,6 @@
   "msg.etapa": "Step {n} of 3 — {rotulo}",
   "attr.16": "Country calling code",
   "msg.enviando": "Sending registration…",
-  "attr.17": "Change language"
+  "attr.17": "Change language",
+  "attr.18": "Switch theme"
 }
