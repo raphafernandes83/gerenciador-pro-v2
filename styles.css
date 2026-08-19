@@ -3682,7 +3682,10 @@ main {
    parada; as ações continuam com a hierarquia original. */
 .hero h1 span {
   padding-inline: .06em;
+  color: var(--orange-2);
   background: linear-gradient(transparent 62%, var(--hook-marker-orange) 62%);
+  background-clip: border-box;
+  -webkit-background-clip: border-box;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
