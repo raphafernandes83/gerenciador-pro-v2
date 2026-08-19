@@ -3575,3 +3575,366 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .sim-lead-destaque { padding: 16px 16px 16px 18px; }
   .sim-compara-destaque { padding: 21px 18px; }
 }
+
+/* ========================================================================
+   HIERARQUIA GLOBAL DE GANCHOS
+   Azul contextualiza e compara; laranja identifica o método/produto;
+   verde confirma benefícios mensuráveis; vermelho fica restrito a risco.
+   O sistema usa a estrutura e as chaves i18n existentes, por isso funciona
+   nos oito idiomas sem inserir marcação dentro das traduções.
+   ======================================================================== */
+main {
+  --hook-blue-soft: rgba(86,183,255,.09);
+  --hook-blue-line: rgba(86,183,255,.38);
+  --hook-orange-soft: rgba(255,122,26,.1);
+  --hook-orange-line: rgba(255,122,26,.42);
+  --hook-green-soft: rgba(41,217,154,.09);
+  --hook-green-line: rgba(41,217,154,.38);
+  --hook-red-soft: rgba(255,102,121,.09);
+  --hook-red-line: rgba(255,102,121,.38);
+  --hook-marker-blue: rgba(86,183,255,.24);
+  --hook-marker-orange: rgba(255,122,26,.28);
+  --hook-marker-green: rgba(41,217,154,.24);
+}
+[data-tema="claro"] main {
+  --hook-blue-soft: rgba(10,111,190,.075);
+  --hook-blue-line: rgba(10,111,190,.3);
+  --hook-orange-soft: rgba(209,98,12,.075);
+  --hook-orange-line: rgba(209,98,12,.32);
+  --hook-green-soft: rgba(13,122,85,.075);
+  --hook-green-line: rgba(13,122,85,.3);
+  --hook-red-soft: rgba(188,36,56,.065);
+  --hook-red-line: rgba(188,36,56,.28);
+  --hook-marker-blue: rgba(10,111,190,.18);
+  --hook-marker-orange: rgba(209,98,12,.2);
+  --hook-marker-green: rgba(13,122,85,.18);
+}
+
+/* Uma assinatura curta guia o olho até os títulos, sem transformar todo
+   subtítulo em uma faixa promocional. */
+.statement-copy h2,
+.section-heading h2,
+.flow-intro h2,
+.operations-copy h2,
+.separation-copy h2,
+.global-panel h2,
+.boundaries-copy h2,
+.form-intro h2 {
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+  text-wrap: balance;
+}
+.statement-copy h2::after,
+.section-heading h2::after,
+.flow-intro h2::after,
+.operations-copy h2::after,
+.separation-copy h2::after,
+.boundaries-copy h2::after,
+.form-intro h2::after {
+  content: "";
+  display: block;
+  width: clamp(42px, 7vw, 76px);
+  height: 3px;
+  margin-top: 17px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--orange), var(--blue));
+}
+.section-heading:not(.left) h2::after {
+  margin-inline: auto;
+}
+
+/* Leads editoriais: são as respostas rápidas para quem apenas escaneia a
+   página. Mantemos o texto integral e destacamos a frase como unidade. */
+.hero-description,
+[data-i18n="statement.03"],
+[data-i18n="comparativo.03"],
+[data-i18n="diferenciais.03"],
+[data-i18n="fluxo.03"],
+[data-i18n="operations.03"],
+[data-i18n="inteligencia.03"],
+[data-i18n="separation.03"],
+[data-i18n="global.03"],
+[data-i18n="compat.03"],
+[data-i18n="participacao.03"],
+[data-i18n="cadastro.03"] {
+  color: var(--text-2);
+  font-weight: 650;
+}
+.statement-copy [data-i18n="statement.03"],
+.comparison-section [data-i18n="comparativo.03"],
+.exclusive-section [data-i18n="diferenciais.03"],
+.flow-section [data-i18n="fluxo.03"],
+.operations-section [data-i18n="operations.03"],
+.intelligence-section [data-i18n="inteligencia.03"],
+.separation-section [data-i18n="separation.03"],
+.compat-section [data-i18n="compat.03"],
+.participation-section [data-i18n="participacao.03"],
+.form-section [data-i18n="cadastro.03"] {
+  padding-left: 17px;
+  border-left: 3px solid var(--blue);
+  background: linear-gradient(90deg, var(--hook-blue-soft), transparent 72%);
+}
+
+/* Hero: o produto e os quatro números de prova são os primeiros pontos de
+   parada; as ações continuam com a hierarquia original. */
+.hero h1 span {
+  padding-inline: .06em;
+  background: linear-gradient(transparent 62%, var(--hook-marker-orange) 62%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.hero-description {
+  position: relative;
+  padding-left: 19px;
+  border-left: 4px solid var(--orange);
+  background: linear-gradient(90deg, var(--hook-orange-soft), transparent 68%);
+}
+.hero-proof span {
+  border-color: var(--hook-blue-line);
+  background: linear-gradient(145deg, var(--hook-blue-soft), var(--surface));
+}
+.hero-proof b {
+  color: var(--orange-2);
+  font-family: Manrope, Inter, sans-serif;
+  font-size: var(--fs-lg);
+}
+.guided-message strong { color: var(--blue-text); }
+
+/* Mudança de categoria e comparação: o lado PRO deve vencer no escaneio,
+   enquanto a coluna de planilha continua legível, porém secundária. */
+.statement-copy h2 span {
+  padding-inline: .08em;
+  color: var(--orange-2);
+  background: linear-gradient(transparent 60%, var(--hook-marker-orange) 60%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.comparison-header .pro-head {
+  color: var(--orange-2);
+  background: var(--hook-orange-soft);
+  box-shadow: inset 0 -3px 0 var(--orange);
+}
+.comparison-row .sheet-cell {
+  color: var(--muted);
+  background: var(--surface);
+}
+.comparison-row .pro-cell {
+  border-left-color: var(--hook-orange-line);
+  background: linear-gradient(90deg, var(--hook-orange-soft), transparent 82%);
+  color: var(--text-2);
+  font-weight: 650;
+}
+.comparison-row .pro-cell .check {
+  color: var(--green-text);
+  border-color: var(--hook-green-line);
+  background: var(--hook-green-soft);
+}
+.comparison-row > div:first-child strong {
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+  color: var(--text);
+}
+
+/* A seção matemática #prova não recebe qualquer alteração de HTML. As
+   classes já existentes fornecem todos os pontos de ancoragem necessários. */
+#prova .prova-destaque,
+#prova .prova-frase,
+#prova .prova-fecho {
+  border-left-color: var(--orange);
+  background: linear-gradient(100deg, var(--hook-orange-soft), transparent 80%);
+}
+#prova .prova-remate strong,
+#prova .prova-frase strong,
+#prova .prova-fecho strong {
+  padding-inline: .08em;
+  color: var(--orange-2);
+  background: linear-gradient(transparent 58%, var(--hook-marker-orange) 58%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+#prova .prova-motor h3,
+#prova .seq-card.destaque h3 { color: var(--orange-2); }
+#prova .seq-card.destaque {
+  border-color: var(--hook-orange-line);
+  background:
+    linear-gradient(145deg, var(--hook-orange-soft), transparent 54%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+#prova code {
+  font-weight: 800;
+  letter-spacing: .035em;
+}
+
+/* Produto e funcionamento: títulos ganham Manrope; o card de maior valor e
+   a conclusão operacional ganham laranja, sem competir com Win/Loss. */
+.exclusive-card h3,
+.flow-node strong,
+.operations-points strong,
+.intel-head strong,
+.session-cards strong,
+.participation-grid h3,
+.form-assurances strong {
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+  text-wrap: balance;
+}
+.exclusive-card.hero-feature {
+  border-color: var(--hook-orange-line);
+  background:
+    linear-gradient(145deg, var(--hook-orange-soft), transparent 52%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+.exclusive-card.hero-feature h3,
+.feature-quote strong { color: var(--orange-2); }
+.feature-quote {
+  border-left: 4px solid var(--orange);
+  background: linear-gradient(100deg, var(--hook-orange-soft), transparent 82%);
+}
+.flow-node strong { color: var(--blue-text); }
+.flow-branch.win-branch {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(105deg, var(--hook-green-soft), transparent 82%);
+}
+.flow-branch.loss-branch {
+  border-color: var(--hook-red-line);
+  background: linear-gradient(105deg, var(--hook-red-soft), transparent 82%);
+}
+.flow-rules strong,
+.operations-points strong { color: var(--text); }
+.operations-points article:last-child strong,
+.showcase-status b { color: var(--orange-2); }
+.operations-points article span {
+  color: var(--blue-text);
+  font-family: Manrope, Inter, sans-serif;
+  font-weight: 800;
+}
+
+/* Inteligência, separação e escala: cada bloco mostra primeiro o conceito,
+   depois o detalhe. */
+.intel-head strong { color: var(--text); }
+.intel-icon {
+  color: var(--blue-text);
+  border-color: var(--hook-blue-line);
+  background: var(--hook-blue-soft);
+}
+.intel-card:nth-child(4) .intel-icon,
+.intel-card:nth-child(5) .intel-icon { color: var(--orange-2); background: var(--hook-orange-soft); }
+.official-session {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(145deg, var(--hook-green-soft), transparent 70%);
+}
+.simulation-session {
+  border-color: var(--hook-blue-line);
+  background: linear-gradient(145deg, var(--hook-blue-soft), transparent 70%);
+}
+.session-divider span {
+  color: var(--orange-2);
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.global-panel h2 {
+  position: relative;
+  color: #fff;
+}
+.global-panel h2::after {
+  content: "";
+  display: block;
+  width: 68px;
+  height: 3px;
+  margin-top: 17px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--orange-3), #fff);
+}
+.global-stats article b {
+  color: #fff;
+  font-family: Manrope, Inter, sans-serif;
+  text-shadow: 0 2px 18px rgba(0,0,0,.18);
+}
+.global-stats article:nth-child(odd) b { color: var(--orange-3); }
+
+/* Limites e compatibilidade: verde confirma proteção; vermelho comunica
+   proibições e riscos, sem transformar o aviso legal em chamada comercial. */
+.boundaries-grid .does {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(145deg, var(--hook-green-soft), transparent 72%);
+}
+.boundaries-grid .does-not {
+  border-color: var(--hook-red-line);
+  background: linear-gradient(145deg, var(--hook-red-soft), transparent 72%);
+}
+.boundaries-grid .does > strong { color: var(--green-text); }
+.boundaries-grid .does-not > strong { color: var(--red-text); }
+.boundaries-grid .does li::marker { color: var(--green); }
+.boundaries-grid .does-not li::marker { color: var(--red); }
+.compat-section [data-i18n="compat.02"] {
+  color: var(--text);
+}
+.compat-grid article {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(145deg, var(--hook-green-soft), transparent 72%);
+}
+.compat-grid article > span,
+.compat-grid article > strong { color: var(--green-text); }
+
+/* Conversão: três caminhos recebem significado próprio, e o formulário
+   concentra os sinais de baixo risco sem alterar qualquer controle. */
+.participation-grid article:first-child {
+  border-color: var(--hook-blue-line);
+  background: linear-gradient(145deg, var(--hook-blue-soft), transparent 70%);
+}
+.participation-grid article.featured {
+  border-color: var(--hook-orange-line);
+  background:
+    linear-gradient(145deg, var(--hook-orange-soft), transparent 58%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+.participation-grid article:last-child {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(145deg, var(--hook-green-soft), transparent 70%);
+}
+.participation-grid article:first-child h3 { color: var(--blue-text); }
+.participation-grid article.featured h3 { color: var(--orange-2); }
+.participation-grid article:last-child h3 { color: var(--green-text); }
+.form-assurances article {
+  border-color: var(--hook-green-line);
+  background: linear-gradient(100deg, var(--hook-green-soft), transparent 82%);
+}
+.form-assurances article > span,
+.form-assurances strong { color: var(--green-text); }
+.form-shell-header h3 {
+  color: var(--text);
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+}
+.secure-badge {
+  border-color: var(--hook-green-line);
+  background: var(--hook-green-soft);
+  color: var(--green-text);
+  font-weight: 800;
+}
+.cta-strip-copy strong {
+  color: var(--orange-2);
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+}
+
+@media (max-width: 640px) {
+  .statement-copy h2::after,
+  .section-heading h2::after,
+  .flow-intro h2::after,
+  .operations-copy h2::after,
+  .separation-copy h2::after,
+  .boundaries-copy h2::after,
+  .form-intro h2::after { margin-top: 13px; }
+
+  .statement-copy [data-i18n="statement.03"],
+  .comparison-section [data-i18n="comparativo.03"],
+  .exclusive-section [data-i18n="diferenciais.03"],
+  .flow-section [data-i18n="fluxo.03"],
+  .operations-section [data-i18n="operations.03"],
+  .intelligence-section [data-i18n="inteligencia.03"],
+  .separation-section [data-i18n="separation.03"],
+  .compat-section [data-i18n="compat.03"],
+  .participation-section [data-i18n="participacao.03"],
+  .form-section [data-i18n="cadastro.03"] {
+    padding-left: 14px;
+  }
+
+  .hero-description { padding-left: 15px; }
+  .comparison-row .pro-cell { background: var(--hook-orange-soft); }
+}
