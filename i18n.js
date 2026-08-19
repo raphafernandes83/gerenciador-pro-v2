@@ -28,6 +28,9 @@
     fr: "bientôt", de: "bald", bn: "শীঘ্রই", zh: "即将推出", ko: "곧",
   };
 
+  const bandeira = codigo =>
+    (window.GP_BANDEIRAS && window.GP_BANDEIRAS[codigo]) || "";
+
   const suportado = c => IDIOMAS.some(i => i.codigo === c && i.pronto);
 
   /* Bengali, chinês e coreano não existem em Inter nem Manrope. A fonte
@@ -119,6 +122,8 @@
 
     const rotulo = document.querySelector(".lang-current");
     if (rotulo) rotulo.textContent = codigo.toUpperCase();
+    const marcaNoBotao = document.querySelector(".lang-toggle .lang-flag");
+    if (marcaNoBotao) marcaNoBotao.innerHTML = bandeira(codigo);
 
     const legenda = EM_BREVE[codigo] || EM_BREVE.en;
     document.querySelectorAll(".lang-option.pendente small").forEach(el => {
@@ -139,11 +144,13 @@
     const fechar = ({ devolverFoco = false } = {}) => {
       alvo.hidden = true;
       gatilho.setAttribute("aria-expanded", "false");
+      gatilho.classList.remove("aberto");
       if (devolverFoco) gatilho.focus();
     };
     const abrir = () => {
       alvo.hidden = false;
       gatilho.setAttribute("aria-expanded", "true");
+      gatilho.classList.add("aberto");
       alvo.querySelector(".lang-option")?.focus();
     };
 
@@ -153,8 +160,12 @@
       botao.type = "button";
       botao.className = "lang-option";
       botao.dataset.idioma = info.codigo;
-      botao.textContent = info.nome;
       botao.lang = info.codigo;
+      botao.setAttribute("role", "menuitemradio");
+      botao.innerHTML =
+        `<span class="lang-flag">${bandeira(info.codigo)}</span>` +
+        `<span class="lang-name">${info.nome}</span>` +
+        `<span class="lang-check" aria-hidden="true">✓</span>`;
 
       if (!info.pronto) {
         botao.disabled = true;
@@ -176,7 +187,14 @@
       if (!alvo.hidden && !e.target.closest(".lang-switch")) fechar();
     });
     document.addEventListener("keydown", e => {
-      if (e.key === "Escape" && !alvo.hidden) fechar({ devolverFoco: true });
+      if (alvo.hidden) return;
+      if (e.key === "Escape") { fechar({ devolverFoco: true }); return; }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      const itens = [...alvo.querySelectorAll(".lang-option:not([disabled])")];
+      const atual = itens.indexOf(document.activeElement);
+      const passo = e.key === "ArrowDown" ? 1 : -1;
+      itens[(atual + passo + itens.length) % itens.length]?.focus();
     });
   }
 

@@ -17,20 +17,28 @@
   <meta name="twitter:description" content="A guided system for planning, recovery, risk control and operational discipline. Spreadsheets record. Gerenciador PRO leads.">
   <meta name="twitter:image" content="https://raphafernandes83.github.io/gerenciador-pro-v2/og-image.jpg">
   <title>Gerenciador PRO — Operational management for traders</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIxMCUiIHkxPSIwJSIgeDI9IjkwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZmY3YTFhIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI2ZmOWU0ZCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTgiIGZpbGw9InVybCgjZykiLz4KICA8dGV4dCB4PSIzMiIgeT0iNDEiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iOTAwIiBmb250LXNpemU9IjI1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMTMxMzEzIj5HUDwvdGV4dD4KPC9zdmc+Cg==">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/gp-mark-32.png">
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/brand/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260804-1">
+  <link rel="stylesheet" href="styles.css?v=20260819-4">
   <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
   <script defer="" src="config.js?v=20260803-2"></script>
-  <script defer="" src="script.js?v=20260804-3"></script>
-  <script defer="" src="site.js?v=20260804-1"></script>
-  <script defer="" src="i18n.js?v=20260815-1"></script>
+  <script defer="" src="script.js?v=20260819-1"></script>
+  <script defer="" src="site.js?v=20260819-1"></script>
+  <script defer="" src="tema.js?v=20260816-1"></script>
+  <script defer="" src="bandeiras.js?v=20260816-1"></script>
+  <script defer="" src="i18n.js?v=20260816-1"></script>
   <script defer="" src="paises.js?v=20260815-1"></script>
   <script defer="" src="telefone.js?v=20260815-1"></script>
 </head>
 <body>
+  <div class="reading-progress" aria-hidden="true">
+    <span></span>
+  </div>
   <a class="skip-link" href="#inicio" data-i18n="geral.01">Skip to content</a>
   <div class="ambient ambient-one" aria-hidden="true"></div>
   <div class="ambient ambient-two" aria-hidden="true"></div>
@@ -47,7 +55,7 @@
 
   <header class="site-header">
     <a class="brand" href="#inicio" aria-label="Gerenciador PRO" data-i18n-attr="aria-label:attr.01">
-      <span class="brand-mark" aria-hidden="true" data-i18n="header.01">GP</span>
+      <span class="brand-mark" aria-hidden="true"><img src="assets/brand/gp-mark-96.webp" srcset="assets/brand/gp-mark-192.webp 2x" width="96" height="96" alt=""></span>
       <span class="brand-copy">
         <strong data-i18n="header.02">Gerenciador PRO</strong>
         <small data-i18n="header.03">Trading Management System</small>
@@ -61,15 +69,25 @@
       <a class="header-link" href="#cadastro" data-i18n="header.07">Join now</a>
     </nav>
 
+    <button class="tema-toggle" type="button" data-alternar-tema="" aria-pressed="false" aria-label="Switch theme">
+      <svg class="tema-sol" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4.2"></circle>
+        <path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"></path>
+      </svg>
+      <svg class="tema-lua" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z"></path>
+      </svg>
+    </button>
+
     <div class="lang-switch">
-      <button class="lang-toggle" type="button" aria-expanded="false" aria-controls="lang-menu" aria-label="Change language">
-        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"></path>
-        </svg>
+      <button class="lang-toggle" type="button" aria-expanded="false" aria-controls="lang-menu" aria-label="Change language" data-i18n-attr="aria-label:attr.17">
+        <span class="lang-flag"></span>
         <span class="lang-current">EN</span>
+        <svg class="lang-caret" viewBox="0 0 12 8" width="10" height="7" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 1.5 6 6.5 11 1.5"></path>
+        </svg>
       </button>
-      <div class="lang-menu" id="lang-menu" data-seletor-idioma="" hidden=""></div>
+      <div class="lang-menu" id="lang-menu" data-seletor-idioma="" role="menu" hidden=""></div>
     </div>
 
     <button class="hamburger-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu" data-i18n-attr="aria-label:attr.03">
@@ -255,17 +273,62 @@
 
     <section class="simulation-section" id="simulacao">
       <div class="section-heading left">
-        <span class="eyebrow" data-i18n="simulacao.01"><i></i> For those still learning</span>
-        <h2 data-i18n="simulacao.02">You will get a lot wrong at the start. That was never the problem.</h2>
+        <span class="eyebrow" data-i18n="simulacao.01"><i></i> FOR THE BEGINNER TRADER STILL LEARNING TO OPERATE</span>
+        <h2 data-i18n="simulacao.02">At the start you will still alternate a lot of Wins and Losses. That is part of learning.</h2>
       </div>
 
-      <div class="sim-body">
-        <p data-i18n="simulacao.03">People learning chart analysis are right about half the time. That is normal, and it is nothing to be ashamed of — it is the price of learning to read a chart. What breaks a beginner's bankroll is not the hit rate. It is what they do after the fourth loss in a row.</p>
-        <p data-i18n="simulacao.04">At an 87% payout, every $1 lost costs $1.15 to win back. Four losses demand five wins, and five wins in a row show up only 10.9% of the time. That distance is what makes the hand rise on its own and double the entry.</p>
-        <p data-i18n="simulacao.05">So we measured it. We simulated 200,000 sessions using Gerenciador PRO's own settings: a $10,000 bankroll, a 2% entry, a 10% target, a 15% stop loss and an 87% payout. <strong>At a 50% hit rate, a flat entry reaches the target in 35.4% of sessions. Recovery Cycles reach it in 49.3%.</strong></p>
-        <p data-i18n="simulacao.06">And classic martingale? It reaches the target more often still — 63%. But when it fails it ends at <strong>$7,000</strong>: 30% down, twice the 15% stop loss the trader had set. Gerenciador PRO stops at $7,957. The difference is not how often you win. It is the size of the damage when you lose.</p>
-        <p data-i18n="simulacao.07">Doubling after a loss walks straight through the limit you set for yourself. That is the real danger, and it is invisible until the session it isn't.</p>
-        <p data-i18n="simulacao.08">No money management invents profit, and anyone promising you that is lying. At a 50% hit rate every average here ends below the starting bankroll. And once you reach 60%, a flat entry overtakes everything else. <strong>Gerenciador PRO was built for the beginning — that is where it changes the outcome most.</strong></p>
+      <p class="sim-lead sim-lead-destaque" data-i18n="simulacao.03">This section was built to represent the beginner trader who is still learning to read charts, test strategies and control their own decisions.</p>
+
+      <div class="sim-intro">
+        <p data-i18n="simulacao.25">It is the phase where some analyses work out, others do not, and there is still not enough consistency to predict the next operation.</p>
+        <p class="sim-ponto sim-ponto-neutro" data-i18n="simulacao.26">To represent that moment mathematically, we use a hit rate of 50% — the equivalent of a coin's probability.</p>
+        <p data-i18n="simulacao.27">That does not mean every beginner gets exactly half of their operations right. The 50% represents a neutral scenario: a trader who has not yet developed a consistent edge over the market.</p>
+        <p class="sim-ponto sim-ponto-risco" data-i18n="simulacao.28">This beginner's biggest problem is not simply being wrong. It is not knowing what to do with the money after a run of Losses.</p>
+        <p class="sim-consequencia" data-i18n="simulacao.29">Without a plan calculated in advance, they may raise the next entry on impulse, go past their own risk limit and try to recover the whole loss in a single operation.</p>
+      </div>
+
+      <div class="sim-passos">
+        <article class="sim-passo-risco">
+          <span class="sim-num" data-i18n="simulacao.30">$10.35</span>
+          <strong class="sim-titulo-card" data-i18n="simulacao.17">Lost $9? To recover it all in a single Win, you would have to risk $10.35.</strong>
+          <p data-i18n="simulacao.04">At an 87% payout, a winning $9 entry produces only $7.83 of profit. That means repeating the same $9 entry does not recover a $9 Loss.</p>
+          <p data-i18n="simulacao.31">To generate roughly $9 of profit in a single operation, the next entry would have to rise to:</p>
+          <p class="sim-conta" data-i18n="simulacao.32">$9 ÷ 0.87 = $10.35</p>
+          <p class="sim-resumo sim-resumo-risco" data-i18n="simulacao.33">You lose $9 when you are wrong, but gain only $7.83 when you are right. That is why, with flat entries, the loss grows faster than the recovery.</p>
+        </article>
+        <article class="sim-passo-deficit">
+          <span class="sim-num" data-i18n="simulacao.34">5 Wins</span>
+          <strong class="sim-titulo-card" data-i18n="simulacao.18">Four $9 Losses require five $9 Wins just to recover the loss.</strong>
+          <p data-i18n="simulacao.05">Four Losses with flat $9 entries produce:</p>
+          <p class="sim-conta" data-i18n="simulacao.35">4 × $9 = −$36</p>
+          <p data-i18n="simulacao.36">Each Win with the same entry generates only $7.83 of profit. Even after four Wins, the recovered amount would be:</p>
+          <p class="sim-conta" data-i18n="simulacao.37">4 × $7.83 = $31.32</p>
+          <p data-i18n="simulacao.38">In other words: the trader has already been right four times and still has not recovered the $36 lost. They would have to reach the fifth Win:</p>
+          <p class="sim-conta" data-i18n="simulacao.39">5 × $7.83 = $39.15</p>
+          <p data-i18n="simulacao.40">Those five Wins do not have to happen consecutively. But while the trader tries to accumulate them, new Losses may appear and raise the deficit again.</p>
+        </article>
+        <article class="sim-passo-alvo">
+          <span class="sim-num" data-i18n="simulacao.41">2 Wins</span>
+          <strong class="sim-titulo-card" data-i18n="simulacao.19">With Gerenciador PRO, the recovery is prepared for a target of two consecutive Wins.</strong>
+          <p data-i18n="simulacao.06">Instead of keeping the same entry and waiting for five Wins to offset four Losses, or trying to recover everything in a single $10.35 entry, the system splits the recovery across two calculated entries.</p>
+          <p data-i18n="simulacao.42">Each new value takes into account the payout, the accumulated deficit, the initial hand, the bankroll size, the stop-loss and the cycle's maximum limit.</p>
+          <p class="sim-resumo sim-resumo-alvo" data-i18n="simulacao.43">When the cycle stays within the limits supported by the configuration, two consecutive Wins can offset the accumulated deficit and complete the planned recovery.</p>
+          <ul class="sim-lista">
+            <li data-i18n="simulacao.44">Without depending on five Wins to slowly rebuild what was lost.</li>
+            <li data-i18n="simulacao.45">Without concentrating the whole recovery in a single aggressive operation.</li>
+            <li data-i18n="simulacao.46">Without letting desperation choose the next entry.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="sim-compara sim-compara-destaque">
+        <h3 data-i18n="simulacao.47">We put both systems in front of the same beginner trader</h3>
+        <ul class="sim-lista">
+          <li data-i18n="simulacao.48">The trader did not become more experienced.</li>
+          <li data-i18n="simulacao.49">The hit rate did not increase.</li>
+          <li data-i18n="simulacao.50">The market did not get any easier.</li>
+          <li class="sim-chave" data-i18n="simulacao.51">The only thing that changed was the way the money is managed.</li>
+        </ul>
       </div>
 
       <div class="sim-duo">
@@ -281,16 +344,172 @@
         </article>
       </div>
 
+      <div class="sim-significa">
+        <span class="sim-selo" data-i18n="simulacao.20">What this really represents</span>
+        <p class="sim-frase" data-i18n="simulacao.21">Not just 14 points: <strong>40% more targets reached</strong> in the simulation.</p>
+        <p class="sim-explica" data-i18n="simulacao.52">Going from 35% to 49% is a difference of 14 percentage points. When we compare the 49 targets with the 35 reached by flat entries, the relative increase is 40%.</p>
+        <p class="sim-explica" data-i18n="simulacao.53">Under the simulated conditions, Gerenciador PRO took the same beginner-trader model from a little more than one target every three sessions to practically one target every two.</p>
+        <p class="sim-explica" data-i18n="simulacao.54">The aggregate result is equivalent to 14 additional targets in every group of 100 sessions.</p>
+        <div class="sim-placar">
+          <div><b>35</b><span data-i18n="simulacao.22">out of every 100 sessions, with flat entries</span></div>
+          <div class="destaque"><b>49</b><span data-i18n="simulacao.23">out of every 100 sessions, with Gerenciador PRO</span></div>
+        </div>
+        <p class="sim-extra" data-i18n="simulacao.24">With flat entries, 65 out of every 100 sessions hit the stop-loss. With Gerenciador PRO, that number fell to 51.</p>
+        <p class="sim-extra sim-reducao" data-i18n="simulacao.55">That is 14 fewer stops in every 100 simulated sessions — a relative reduction of roughly 21.5% in the frequency of sessions that reached the loss limit.</p>
+      </div>
+
+      <div class="sim-motor">
+        <h3 data-i18n="simulacao.56">Gerenciador PRO does not need to make you win more in order to improve your money management</h3>
+        <p data-i18n="simulacao.07">No system makes you predict the market. Anyone promising that is not being honest.</p>
+        <p data-i18n="simulacao.08">Gerenciador PRO does not artificially raise your hit rate. It organises the entries so impulse cannot decide the next value, and so the cycle has more capacity to cross negative runs within the configured limits.</p>
+        <p data-i18n="simulacao.57">It reduces decisions taken out of desperation, tracks the accumulated deficit, distributes the recovery need, respects the configured stop-loss and prepares the cycle for the moment when two consecutive Wins appear.</p>
+        <p class="sim-remate" data-i18n="simulacao.58">It does not change the market's results. <strong>It changes the way those results affect your bankroll.</strong></p>
+        <p data-i18n="simulacao.59">At an 87% payout, the mathematical expectancy of an entry only starts to turn positive once the hit rate goes past roughly 53.5%. Below that, no money management turns a strategy without an edge into a profitable strategy over the long run.</p>
+        <p class="sim-fecho" data-i18n="simulacao.60">While the beginner trader studies, practises and builds consistency, Gerenciador PRO offers control, discipline and room to keep learning without letting desperation decide the next entry.</p>
+      </div>
+
       <div class="sim-conditions">
-        <strong data-i18n="simulacao.11">The conditions these numbers were calculated under</strong>
-        <p data-i18n="simulacao.12">Bankroll of $10,000. Entry of 2%, target of +10%, stop loss of −15%, payout of 87%, recovery split 35/65 across the two entries. Hit rate of 50%, the equivalent of a coin. 200,000 sessions simulated for each system, following the exact rules of the app: the second entry of a hand is only played after the first one wins.</p>
-        <p data-i18n="simulacao.13">The figures are proportional: a $1,000 bankroll with a $20 entry produces exactly the same percentages. What matters is the ratio between entry and bankroll, not the currency or the size.</p>
-        <p data-i18n="simulacao.14">Results change with the settings. A wider stop loss lets recovery run longer and raises both the chance of reaching the target and the size of the worst sessions.</p>
+        <strong data-i18n="simulacao.11">Under what conditions was this comparison calculated?</strong>
+        <p data-i18n="simulacao.12">To compare the two systems on equal footing, we kept the same starting conditions:</p>
+        <ul class="sim-parametros">
+          <li data-i18n="simulacao.61">Hit rate of 50%</li>
+          <li data-i18n="simulacao.62">Payout of 87%</li>
+          <li data-i18n="simulacao.63">Starting bankroll of $10,000</li>
+          <li data-i18n="simulacao.64">Initial entry of 2% of the bankroll, equal to $200</li>
+          <li data-i18n="simulacao.65">Target of +10%</li>
+          <li data-i18n="simulacao.66">Stop-loss of −15%</li>
+        </ul>
+        <p data-i18n="simulacao.13">From those conditions on, each system followed its own rule.</p>
+        <p data-i18n="simulacao.67">With flat entries, the stake stayed fixed at $200 throughout the session.</p>
+        <p data-i18n="simulacao.68">With Gerenciador PRO, the new entries were calculated according to the accumulated deficit, with the recovery distributed 35% and 65% across the two entries. The second entry of each hand only happened after the first one won.</p>
+        <p data-i18n="simulacao.69">200,000 sessions were simulated for each system, keeping the same hit rate, the same payout, the same starting bankroll, the same target and the same loss limit.</p>
+        <p data-i18n="simulacao.70">The earlier example with $9 entries only serves to show, in simple terms, the difference between the amount lost in a Loss and the profit received in a Win at an 87% payout. It does not represent the entry value used in the $10,000 simulation.</p>
+        <p data-i18n="simulacao.71">Because the calculations are proportional, the logic stays the same regardless of the bankroll size or the nominal entry value.</p>
+        <p data-i18n="simulacao.14">Results change with the settings. A wider stop-loss lets the recovery run longer, but it also increases the size of the worst sessions.</p>
+        <p data-i18n="simulacao.72">Simulations demonstrate the mathematical behaviour of a configuration. They do not predict future operations nor guarantee financial results.</p>
       </div>
 
       <div class="sim-cta">
         <a class="button button-primary" href="#cadastro" data-i18n="simulacao.15">Join the list <span aria-hidden="true">→</span></a>
         <p class="sim-legal" data-i18n="simulacao.16">A tool for organisation and operational control. It does not promise, suggest or guarantee financial results. Simulations do not predict future outcomes.</p>
+      </div>
+    </section>
+
+
+    <section class="prova-section" id="prova">
+      <div class="section-heading left">
+        <span class="eyebrow" data-i18n="prova.01"><i></i> The maths behind it</span>
+        <h2 data-i18n="prova.02">Are two wins in a row really that hard?</h2>
+      </div>
+
+      <div class="prova-abertura">
+        <p data-i18n="prova.03">Imagine you have to call the result of two coin tosses. The chance of getting the first one right is 50%. The chance of also getting the second one right is 50%.</p>
+        <div class="prova-conta" aria-hidden="true">
+          <span>50%</span><em>×</em><span>50%</span><em>=</em><strong>25%</strong>
+        </div>
+        <p data-i18n="prova.04">That is when you only have two attempts.</p>
+        <p data-i18n="prova.05">But in a block of ten attempts there are nine different positions where a <code>W — W</code> sequence can appear. Because those possibilities overlap, the correct calculation has to consider all 1,024 possible sequences.</p>
+      </div>
+
+      <div class="prova-destaque">
+        <b>85,94%</b>
+        <div>
+          <strong data-i18n="prova.06">In 85.94% of the sequences at least one <code>W — W</code> appears</strong>
+          <span data-i18n="prova.07">This happens in a completely random laboratory, with no chart analysis, no strategy and no edge over the result — with nothing but the same hit probability as a coin.</span>
+        </div>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.08">Now let us consider an even stricter scenario: a block that ended with exactly four wins and six losses. There are 210 different ways to distribute those four Wins across the ten operations.</p>
+        <div class="prova-fracao">
+          <b>175</b><span>de</span><b>210</b>
+          <em data-i18n="prova.09">distributions contain at least one <code>W — W</code></em>
+        </div>
+        <p class="prova-remate" data-i18n="prova.10">Even hitting only 4 out of 10, <strong>83.33% of the distributions contain two wins in a row.</strong></p>
+      </div>
+
+      <div class="prova-motor">
+        <p data-i18n="prova.11">It is exactly this mathematical event that Gerenciador PRO turns into a financial goal. The system does not create the wins and does not predict the market. Its calculation engine works out every new entry taking into account the payout, the accumulated deficit, the starting hand, the size of the bankroll, the stop-loss and the cycle limit.</p>
+        <p data-i18n="prova.12">So when the smallest necessary event happens — two wins in a row — and the setup has enough room to carry the earlier steps, the pair is calculated to recover the accumulated deficit and close the cycle at the planned result.</p>
+      </div>
+
+      <h3 class="prova-titulo" data-i18n="prova.13">See what happens without management</h3>
+
+      <div class="seq-grid">
+        <article class="seq-card">
+          <span class="seq-rotulo" data-i18n="prova.14">Fixed $2 entry · 87% payout</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="w">W</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="l">L</i><i class="w">W</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.15">That was 5 Wins and 5 Losses. The trader got half the operations right and still finished with:</p>
+          <b class="seq-valor negativo">−$1,30</b>
+        </article>
+
+        <article class="seq-card">
+          <span class="seq-rotulo" data-i18n="prova.16">Same rule, a worse sequence</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.17">That was 8 Losses and only 2 Wins. Keeping the fixed $2 entry and the 87% payout, the result would be:</p>
+          <b class="seq-valor negativo">−$12,52</b>
+        </article>
+
+        <article class="seq-card destaque">
+          <span class="seq-rotulo" data-i18n="prova.18">The same sequence, with Gerenciador PRO</span>
+          <div class="seq-fichas" aria-hidden="true"><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="l">L</i><i class="w">W</i><i class="w">W</i></div>
+          <p data-i18n="prova.19">The sequence has not changed. It is still eight Losses and only two Wins. What changes completely is how the money is distributed through the cycle.</p>
+          <b class="seq-valor positivo" data-i18n="prova.20">Full recovery of the cycle's loss</b>
+        </article>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.21">Instead of keeping fixed entries, which would leave a $12.52 loss, or resorting to aggressive and uncontrolled progressions, the calculation engine of Gerenciador PRO works out the value of each step in advance.</p>
+        <p data-i18n="prova.22">The Losses are absorbed as small planned and controlled losses. The system tracks the accumulated deficit and spreads the recovery across the next entries, without depending on a single desperate entry to try to save the whole bankroll.</p>
+        <span class="prova-legenda" data-i18n="prova.23">Every new value is calculated taking into account:</span>
+        <ul class="prova-fatores">
+          <li data-i18n="prova.24">the payout</li>
+          <li data-i18n="prova.25">the accumulated deficit</li>
+          <li data-i18n="prova.26">the starting hand</li>
+          <li data-i18n="prova.27">the size of the bankroll</li>
+          <li data-i18n="prova.28">the stop-loss</li>
+          <li data-i18n="prova.29">the maximum number of supported steps</li>
+        </ul>
+        <p data-i18n="prova.30">The goal is to carry the bankroll through the losing sequence with enough room to reach the event that actually closes the cycle: two wins in a row. When the <code>W — W</code> finally happens within the limit the setup supports, those two Wins carry the financial weight needed to offset every loss accumulated in the earlier steps.</p>
+      </div>
+
+      <div class="prova-nota">
+        <p data-i18n="prova.31">The two Wins did not erase eight Losses by magic. The recovery was possible because Gerenciador PRO prepared every entry mathematically from the start.</p>
+        <ul class="prova-sem">
+          <li data-i18n="prova.32">Without doubling values indiscriminately after every Loss.</li>
+          <li data-i18n="prova.33">Without concentrating the whole recovery into a single extremely risky operation.</li>
+          <li data-i18n="prova.34">Without letting desperation decide the next value.</li>
+        </ul>
+      </div>
+
+      <h3 class="prova-titulo" data-i18n="prova.35">Now imagine this tool in the hands of a trader with a 60% hit rate</h3>
+
+      <div class="prova-tabela-caixa">
+        <table class="prova-tabela">
+          <thead>
+            <tr>
+              <th data-i18n="prova.36">Hit rate</th>
+              <th data-i18n="prova.37">Chance of a <code>W — W</code> appearing in 10 operations</th>
+              <th data-i18n="prova.38">Distributions containing <code>W — W</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>40%</td><td>71,00%</td><td>175 <span>/ 210</span></td></tr>
+            <tr><td>50%</td><td>85,94%</td><td>246 <span>/ 252</span></td></tr>
+            <tr class="destaque"><td>60%</td><td>94,67%</td><td>210 <span>/ 210</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="prova-bloco">
+        <p data-i18n="prova.39">And when a block ends with exactly 6 Wins and 4 Losses, the result is even more striking. There are 210 different ways to distribute those six Wins across the ten operations. Every single one of them contains at least two wins in a row.</p>
+        <p class="prova-remate" data-i18n="prova.40"><strong>This happens because it is mathematically impossible to distribute six Wins across ten positions while keeping them all apart.</strong></p>
+      </div>
+
+      <div class="prova-fecho">
+        <p data-i18n="prova.41">If Gerenciador PRO can prepare the recovery even in a disastrous cycle with eight Losses and only two Wins at the end, imagine the potential of this tool in the hands of a trader who already holds a 60% hit rate.</p>
+        <p class="prova-frase" data-i18n="prova.42">You do not need to win most of the operations to recover a cycle. You need to be mathematically prepared for when the two wins in a row show up.</p>
+        <p data-i18n="prova.43">Gerenciador PRO does not promise you will never have Losses. It does something far smarter: <strong>it prepares your bankroll to take full advantage of the Wins when they finally meet.</strong></p>
       </div>
     </section>
 
@@ -333,9 +552,12 @@
           <h3 data-i18n="diferenciais.18">Split Recovery</h3>
           <p data-i18n="diferenciais.19">The trader uses the slider to set how much of the loss each of the two entries will try to recover.</p>
           <div class="split-demo">
-            <div><span data-i18n="diferenciais.20">1st entry</span><b>35%</b></div>
-            <div class="split-track"><i></i></div>
-            <div><span data-i18n="diferenciais.21">2nd entry</span><b>65%</b></div>
+            <div><span id="split-rotulo-1" data-i18n="diferenciais.20">1st entry</span><b><output id="split-saida-1" for="split-range">35%</output></b></div>
+            <div class="split-track">
+              <input class="split-range" id="split-range" type="range" min="0" max="100" step="1" value="35" aria-labelledby="split-rotulo-1" aria-describedby="split-rotulo-2 split-saida-2" aria-valuenow="35" aria-valuetext="35% / 65%">
+              <i aria-hidden="true"></i>
+            </div>
+            <div><span id="split-rotulo-2" data-i18n="diferenciais.21">2nd entry</span><b><output id="split-saida-2" for="split-range">65%</output></b></div>
           </div>
         </article>
 
@@ -354,9 +576,9 @@
         <article class="exclusive-card">
           <span class="card-tag" data-i18n="diferenciais.28">AUTOMATED DISCIPLINE</span>
           <div class="exclusive-icon">05</div>
-          <h3 data-i18n="diferenciais.29">Operational Lockout</h3>
+          <h3 id="titulo-bloqueio" data-i18n="diferenciais.29">Operational Lockout</h3>
           <p data-i18n="diferenciais.30">When the profit target or the loss limit is reached, the app can end the session and block new operations for the period you choose.</p>
-          <div class="lock-options"><span>8h</span><span>12h</span><span>16h</span><span>20h</span></div>
+          <div class="lock-options" role="group" aria-labelledby="titulo-bloqueio"><button type="button" aria-pressed="true">8h</button><button type="button" aria-pressed="false">12h</button><button type="button" aria-pressed="false">16h</button><button type="button" aria-pressed="false">20h</button></div>
         </article>
       </div>
     </section>
@@ -419,12 +641,12 @@
         <div class="control-showcase">
           <div class="showcase-label" data-i18n="operations.12">OPERATIONAL CONTROLS</div>
           <div class="showcase-buttons three-d">
-            <button aria-label="Example of the copy button" data-i18n="operations.13" data-i18n-attr="aria-label:attr.06">□<small>COPY</small></button>
-            <button class="w" aria-label="Example of the Win button" data-i18n="operations.14" data-i18n-attr="aria-label:attr.07">W<small>WIN</small></button>
-            <button class="l" aria-label="Example of the Loss button" data-i18n="operations.15" data-i18n-attr="aria-label:attr.08">L<small>LOSS</small></button>
+            <button type="button" class="showcase-copy" aria-label="Example of the copy button" data-i18n="operations.13" data-i18n-attr="aria-label:attr.06">□<small>COPY</small></button>
+            <button type="button" class="w" aria-pressed="false" aria-label="Example of the Win button" data-i18n="operations.14" data-i18n-attr="aria-label:attr.07">W<small>WIN</small></button>
+            <button type="button" class="l" aria-pressed="false" aria-label="Example of the Loss button" data-i18n="operations.15" data-i18n-attr="aria-label:attr.08">L<small>LOSS</small></button>
           </div>
           <div class="style-switch">
-            <span class="active" data-i18n="operations.16">3D PREMIUM</span><span data-i18n="operations.17">REFINED FLAT</span>
+            <button type="button" class="style-3d" aria-pressed="true" data-i18n="operations.16">3D PREMIUM</button><button type="button" class="style-flat" aria-pressed="false" data-i18n="operations.17">REFINED FLAT</button>
           </div>
           <div class="showcase-status">
             <span data-i18n="operations.18"><i></i> Next step unlocked</span>
@@ -453,9 +675,9 @@
         <article class="intel-card wide">
           <div class="intel-head">
             <span class="intel-icon">▥</span>
-            <div><strong data-i18n="inteligencia.04">Performance Panel</strong><small data-i18n="inteligencia.05">Filters by period and session type</small></div>
+            <div><strong id="titulo-painel" data-i18n="inteligencia.04">Performance Panel</strong><small data-i18n="inteligencia.05">Filters by period and session type</small></div>
           </div>
-          <div class="filter-pills"><span data-i18n="inteligencia.06">7 days</span><span data-i18n="inteligencia.07">30 days</span><span data-i18n="inteligencia.08">This month</span><span class="active" data-i18n="inteligencia.09">All time</span></div>
+          <div class="filter-pills" role="group" aria-labelledby="titulo-painel"><button type="button" aria-pressed="false" data-i18n="inteligencia.06">7 days</button><button type="button" aria-pressed="false" data-i18n="inteligencia.07">30 days</button><button type="button" aria-pressed="false" data-i18n="inteligencia.08">This month</button><button type="button" aria-pressed="true" data-i18n="inteligencia.09">All time</button></div>
           <div class="metric-grid">
             <div><small data-i18n="inteligencia.10">Hit rate</small><b>—</b></div>
             <div><small data-i18n="inteligencia.11">Profit Factor</small><b>—</b></div>
@@ -654,7 +876,7 @@
         </div>
 
         <div class="form-company-note">
-          <span class="brand-mark small" aria-hidden="true" data-i18n="cadastro.10">GP</span>
+          <span class="brand-mark small" aria-hidden="true"><img src="assets/brand/gp-mark-96.webp" srcset="assets/brand/gp-mark-192.webp 2x" width="96" height="96" alt=""></span>
           <p data-i18n="cadastro.11"><strong>Gerenciador PRO</strong><br>Organisation, technology and operational discipline.</p>
         </div>
       </div>
@@ -732,7 +954,7 @@
 
             <div class="form-grid two-columns">
               <div class="field">
-                <label for="email" data-i18n="cadastro.27">Email (optional)</label>
+                <label for="email" data-i18n="cadastro.27">Email <em>*</em></label>
                 <input id="email" name="email" type="email" required="" inputmode="email" placeholder="you@example.com" autocomplete="email" aria-describedby="email-error" data-i18n-attr="placeholder:attr.11">
                 <span class="field-error" id="email-error" aria-live="polite"></span>
               </div>
@@ -905,7 +1127,7 @@
 
   <footer>
     <div class="brand footer-brand">
-      <span class="brand-mark" aria-hidden="true" data-i18n="footer.01">GP</span>
+      <span class="brand-mark" aria-hidden="true"><img src="assets/brand/gp-mark-96.webp" srcset="assets/brand/gp-mark-192.webp 2x" width="96" height="96" alt=""></span>
       <span class="brand-copy">
         <strong data-i18n="footer.02">Gerenciador PRO</strong>
         <small data-i18n="footer.03">A new generation of operational management</small>
