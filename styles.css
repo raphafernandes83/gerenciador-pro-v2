@@ -75,6 +75,54 @@
   --btn-loss-2: #1a060a;
   --btn-mini-1: #172130;
   --btn-mini-2: #080d13;
+
+  /* Superfície de card e camadas decorativas do tema escuro.
+     Estes sete tokens existiam apenas em [data-tema="claro"]. Sem eles
+     aqui, todo `background: linear-gradient(…, var(--card-1), …)` era
+     descartado pelo navegador e o card ficava transparente, colado ao
+     fundo da página. */
+  --card-1: rgba(17,25,37,.95);
+  --card-2: rgba(8,12,18,.96);
+  --grade-line: rgba(255,255,255,.025);
+  --brilho: rgba(255,255,255,.045);
+  --brilho-forte: rgba(255,255,255,.4);
+  --painel-global-texto: #fff;
+  --painel-global-texto-2: rgba(255,255,255,.8);
+
+  /* Elevação: um único lugar decide borda e sombra de card, em repouso
+     e sob o mouse. Antes cada componente escolhia a sua. */
+  --card-border: rgba(255,255,255,.17);
+  --card-border-strong: rgba(255,255,255,.32);
+  --card-shadow-rest: 0 1px 2px rgba(0,0,0,.34), 0 10px 26px rgba(0,0,0,.26);
+  --card-shadow-hover: 0 3px 8px rgba(0,0,0,.4), 0 22px 46px rgba(0,0,0,.36);
+  --card-topo: rgba(255,255,255,.055);
+
+  /* Sistema de leitura. Tipografia não depende do tema, então estes
+     tokens vivem só aqui e nunca são redefinidos em [data-tema="claro"].
+
+     --fs-body e --fs-lead entram na família --fs-* que já existe acima,
+     em vez de abrir um prefixo --size-* paralelo: são exatamente pontes
+     fluidas entre passos já definidos (--fs-sm↔--fs-base e 18px↔--fs-md),
+     e dois prefixos para a mesma grandeza confundiriam quem editar depois.
+
+     As três entrelinhas substituem os 18 valores arbitrários que o
+     conteúdo de leitura usava. Continua valendo line-height: 1 em número
+     grande, ícone, indicador e chip curto — ali não há texto corrido. */
+  --measure-reading: 68ch;
+  --leading-heading: 1.12;
+  --leading-body: 1.7;
+  --leading-card: 1.5;
+  --fs-body: clamp(1rem, .97rem + .15vw, 1.0625rem);
+  --fs-lead: clamp(1.125rem, 1.08rem + .2vw, 1.1875rem);
+
+  /* Movimento. Uma curva só para toda a página: sai rápido, chega devagar,
+     sem quicar. O atraso é escrito pelo JavaScript por grupo de cards. */
+  --reveal-ease: cubic-bezier(.16, .8, .24, 1);
+  --reveal-dur: .66s;
+  --reveal-delay: 0ms;
+
+  /* Trecho ainda não escolhido do trilho do divisor. */
+  --split-empty: rgba(255,255,255,.14);
 }
 
 /* === Tema claro ====================================================
@@ -149,6 +197,15 @@
   --brilho-forte: rgba(255,255,255,.55);
   --painel-global-texto: #0e2337;
   --painel-global-texto-2: rgba(14,35,55,.78);
+
+  /* Sobre fundo quase branco a separação vem da borda e de uma sombra
+     curta; sombra longa aqui suja a página em vez de dar profundidade. */
+  --card-border: rgba(12,22,38,.12);
+  --card-border-strong: rgba(12,22,38,.22);
+  --card-shadow-rest: 0 1px 2px rgba(18,32,56,.07), 0 6px 16px rgba(18,32,56,.07);
+  --card-shadow-hover: 0 3px 8px rgba(18,32,56,.1), 0 16px 34px rgba(18,32,56,.12);
+  --card-topo: rgba(255,255,255,.9);
+  --split-empty: rgba(12,22,38,.16);
 }
 
 * { box-sizing: border-box; }
@@ -177,12 +234,74 @@ p { text-wrap: pretty; }
 /* folga = altura do header fixo (88px) + respiro */
 section { scroll-margin-top: 108px; }
 
+/* === Revelação =====================================================
+   Antes existia uma única entrada — 22px de baixo para cima — para os 69
+   blocos da página, com atraso tirado do índice global. O efeito era o
+   mesmo do começo ao fim e o atraso não tinha relação com o que estava
+   na tela. Agora a direção da entrada vem do papel do bloco no layout, e
+   o atraso é contado dentro do próprio grupo de cards.
+
+   Só `opacity`, `transform` e — nos títulos — `clip-path` são animados:
+   nenhum deles provoca relayout. */
 .reveal {
   opacity: 0;
-  transform: translateY(22px);
-  transition: opacity .7s cubic-bezier(.16,.8,.24,1), transform .7s cubic-bezier(.16,.8,.24,1);
+  transition:
+    opacity var(--reveal-dur, .66s) var(--reveal-ease),
+    transform var(--reveal-dur, .66s) var(--reveal-ease),
+    clip-path var(--reveal-dur, .66s) var(--reveal-ease);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
 }
-.reveal.is-visible { opacity: 1; transform: none; }
+/* Título: entra como abertura de capítulo — sobe pouco e é descoberto
+   por uma máscara que corre de cima para baixo. O estado final usa
+   recuo negativo, então nada fica cortado depois que o bloco aparece. */
+.reveal--heading {
+  --reveal-dur: .72s;
+  transform: translateY(14px);
+  clip-path: inset(-20% -20% 24% -20%);
+}
+.reveal--up    { transform: translateY(20px); }
+.reveal--left  { transform: translateX(-26px); }
+.reveal--right { transform: translateX(26px); }
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  will-change: auto;
+}
+.reveal--heading.is-visible { clip-path: inset(-20% -20% -20% -20%); }
+
+/* Onde o par esquerda/direita colapsa em coluna única, a entrada lateral
+   perde o sentido e vira vertical. Isso também elimina qualquer risco de
+   o deslocamento horizontal empurrar a página para fora da tela. */
+@media (max-width: 900px) {
+  .reveal--left, .reveal--right { transform: translateY(20px); }
+}
+
+/* `clip` — e não `hidden` — porque estas seções abrigam blocos `sticky`,
+   que um contêiner de rolagem quebraria. */
+.flow-section, .separation-section, .form-section, .operations-panel { overflow-x: clip; }
+
+/* === Barra de progresso de leitura =================================
+   Sem texto, sem foco, sem altura no fluxo: só informa quanto falta.
+   O preenchimento anda por scaleX, nunca por width, e sem transição —
+   assim a leitura é imediata inclusive com movimento reduzido. */
+.reading-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 300;
+  height: 3px;
+  pointer-events: none;
+  background: transparent;
+}
+.reading-progress > span {
+  display: block;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--orange), var(--orange-3));
+  will-change: transform;
+}
 
 .grid-overlay {
   position: fixed;
@@ -345,8 +464,9 @@ section { scroll-margin-top: 108px; }
   max-width: 760px;
   margin: 24px 0;
   font-size: clamp(2.5rem, 5.2vw, 4.25rem);
-  line-height: 1.05;
+  line-height: var(--leading-heading);
   letter-spacing: -.065em;
+  text-wrap: balance;
 }
 .hero h1 span {
   color: transparent;
@@ -354,12 +474,16 @@ section { scroll-margin-top: 108px; }
   background-clip: text;
   -webkit-background-clip: text;
 }
+/* Nível 1 — abertura. Ponto de entrada visual da seção: maior que o
+   corpo, mais claro que o corpo, mas sem disputar com o título. */
 .hero-description {
-  max-width: 720px;
+  max-width: var(--measure-reading);
   margin: 0;
   color: var(--text-2);
-  font-size: var(--fs-md);
-  line-height: 1.82;
+  font-size: var(--fs-lead);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
 .button {
@@ -628,8 +752,9 @@ section { scroll-margin-top: 108px; }
   max-width: 900px;
   margin-bottom: 18px;
   font-size: clamp(2rem,3.8vw,3rem);
-  line-height: 1.12;
+  line-height: var(--leading-heading);
   letter-spacing: -.055em;
+  text-wrap: balance;
 }
 .statement-copy h2 span {
   color: var(--text);
@@ -638,12 +763,14 @@ section { scroll-margin-top: 108px; }
   text-decoration-thickness: 3px;
   text-underline-offset: 8px;
 }
+/* Nível 2 — corpo principal. */
 .statement-copy p {
-  max-width: 820px;
+  max-width: var(--measure-reading);
   margin: 0;
   color: var(--muted);
-  font-size: var(--fs-base);
-  line-height: 1.8;
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .comparison-section,
@@ -676,19 +803,29 @@ section { scroll-margin-top: 108px; }
 .form-intro h2 {
   margin: 19px 0 15px;
   font-size: clamp(1.9rem,3.6vw,2.75rem);
-  line-height: 1.12;
+  line-height: var(--leading-heading);
   letter-spacing: -.055em;
+  text-wrap: balance;
 }
+/* Nível 1 — abertura de seção. */
 .section-heading p,
 .flow-intro p,
 .operations-copy > p,
 .separation-copy p,
 .form-intro > p {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-base);
-  line-height: 1.78;
+  max-width: var(--measure-reading);
+  color: var(--text-2);
+  font-size: var(--fs-lead);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
+/* A caixa de leitura acompanha o alinhamento que o bloco já tinha:
+   centralizada onde o cabeçalho é centralizado, encostada à esquerda
+   onde ele é `.left`. Nenhum texto muda de alinhamento. */
+.section-heading > p { margin-inline: auto; }
+.section-heading.left > p { margin-inline: 0; }
 
 .comparison-shell {
   position: relative;
@@ -770,7 +907,14 @@ section { scroll-margin-top: 108px; }
 .check { color: var(--green); background: rgba(41,217,154,.09); }
 .minus { color: var(--muted-2); background: var(--surface-2); }
 .partial { color: var(--yellow); background: rgba(255,200,81,.08); }
-.comparison-note { margin: 15px 0 0; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.5; }
+.comparison-note {
+  margin: 15px 0 0;
+  max-width: var(--measure-reading);
+  color: var(--muted-2);
+  font-size: var(--fs-2xs);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
 
 .exclusive-grid {
   display: grid;
@@ -871,16 +1015,26 @@ section { scroll-margin-top: 108px; }
   font-size: var(--fs-xs);
 }
 .split-demo b { color: var(--green); font-size: var(--fs-base); }
+/* O trilho era um enfeite: gradiente parado em 35% e uma bolinha parada
+   em 35%. Agora ele é um `input[type=range]` de verdade, transparente por
+   cima, e o desenho continua sendo o trilho mais o indicador — os dois
+   posicionados pela mesma conta que o navegador usa para o polegar, de
+   modo que o que se vê e o valor real nunca se separam.
+   --split-n é a fração (0 a 1), escrita pelo JavaScript. */
 .split-track {
+  --split-n: .35;
+  --split-pos: calc(10px + (100% - 20px) * var(--split-n));
   height: 9px;
-  margin: 13px 0;
+  margin: 16px 0;
   position: relative;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--green) 35%, rgba(255,255,255,.09) 35%);
+  background: linear-gradient(90deg,
+    var(--green) var(--split-pos),
+    var(--split-empty) var(--split-pos));
 }
-.split-track i {
+.split-track > i {
   position: absolute;
-  left: 35%;
+  left: var(--split-pos);
   top: 50%;
   width: 20px;
   height: 20px;
@@ -889,20 +1043,74 @@ section { scroll-margin-top: 108px; }
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 3px 12px rgba(41,217,154,.4);
+  pointer-events: none;
+}
+/* O controle nativo cobre o trilho inteiro e fica invisível: quem
+   desenha é o `i` acima. Assim o mouse, o toque, as setas, Home e End
+   funcionam sozinhos, sem nenhum evento reimplementado à mão. */
+.split-range {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 30px;          /* alvo de toque folgado, acima dos 24px da WCAG */
+  margin: 0;
+  transform: translateY(-50%);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+/* O polegar precisa medir os mesmos 20px do indicador visível: é a
+   largura dele que define o recuo do percurso nas duas pontas. */
+.split-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--green);
+}
+.split-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--green);
+}
+.split-range:focus { outline: none; }
+/* O foco é desenhado no indicador, que é o que a pessoa enxerga. */
+.split-range:focus-visible ~ i {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
 }
 .lock-options { margin-top: 28px; display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; }
-.lock-options span {
+.lock-options button {
   min-height: 38px;
+  padding: 0;
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--text-2);
   background: var(--surface);
+  font-family: inherit;
   font-size: var(--fs-xs);
   font-weight: 800;
+  cursor: pointer;
 }
-.lock-options span:first-child { color: var(--on-blue); background: var(--blue); border-color: var(--blue); }
+/* O estado deixou de morar na posição (`:first-child`) e passou a morar
+   no aria-pressed — a mesma coisa que o leitor de tela anuncia. Além da
+   cor, a opção escolhida ganha preenchimento sólido, inversão de
+   contraste no texto e uma elevação curta. */
+.lock-options button[aria-pressed="true"] {
+  color: var(--on-blue);
+  background: var(--blue);
+  border-color: var(--blue);
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.lock-options button:hover:not([aria-pressed="true"]) { color: var(--text); background: var(--surface-2); border-color: var(--line-strong); }
 
 .flow-section {
   display: grid;
@@ -979,7 +1187,7 @@ section { scroll-margin-top: 108px; }
 }
 .flow-rules article div { display: flex; flex-direction: column; gap: 4px; }
 .flow-rules strong { font-size: var(--fs-xs); }
-.flow-rules span { color: var(--muted-2); font-size: var(--fs-2xs); }
+.flow-rules span { color: var(--muted-2); font-size: var(--fs-xs); }
 
 .operations-panel {
   padding: 42px;
@@ -1016,7 +1224,7 @@ section { scroll-margin-top: 108px; }
   font-weight: 900;
 }
 .operations-points strong { font-size: var(--fs-xs); }
-.operations-points p { margin: 5px 0 0; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.45; }
+.operations-points p { margin: 5px 0 0; color: var(--muted-2); font-size: var(--fs-xs); }
 .control-showcase {
   padding: 29px;
   border: 1px solid var(--line);
@@ -1069,17 +1277,33 @@ section { scroll-margin-top: 108px; }
   border-radius: 11px;
   background: var(--panel-deep);
 }
-.style-switch span {
+/* Eram dois `span` com cara de botão. Agora são botões de verdade, com
+   o mesmo desenho — o estado mora em aria-pressed, não numa classe
+   paralela que pudesse discordar do que o leitor de tela anuncia. */
+.style-switch button {
   min-height: 33px;
+  padding: 0;
   display: grid;
   place-items: center;
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--muted-2);
+  background: transparent;
+  font-family: inherit;
   font-size: var(--fs-3xs);
   font-weight: 900;
   letter-spacing: .07em;
+  cursor: pointer;
 }
-.style-switch .active { color: var(--on-blue); background: var(--blue); }
+/* A opção ativa não se distingue só pela cor: ganha preenchimento e
+   contorno próprios, além do aria-pressed. */
+.style-switch button[aria-pressed="true"] {
+  color: var(--on-blue);
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.style-switch button:hover:not([aria-pressed="true"]) { color: var(--text-2); background: var(--surface); }
+.style-switch button:active { transform: scale(.97); }
 .showcase-status {
   margin-top: 13px;
   padding: 14px;
@@ -1094,6 +1318,76 @@ section { scroll-margin-top: 108px; }
 .showcase-status span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: var(--fs-2xs); }
 .showcase-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .showcase-status b { font-size: var(--fs-2xs); color: var(--green-text); }
+
+/* === Prévia dos controles operacionais =============================
+   Os três botões já eram `<button>`, mas não respondiam a nada. Aqui
+   entram só os estados: convite ao clique, seleção e acabamento. A
+   geometria — altura, raio, corpo da fonte, espaçamento — não muda em
+   nenhum estado, então nada salta quando o acabamento troca. */
+.showcase-buttons button { cursor: pointer; }
+.showcase-buttons button:hover { border-color: rgba(86,183,255,.6); }
+.showcase-buttons button.w:hover { border-color: rgba(41,217,154,.68); }
+.showcase-buttons button.l:hover { border-color: rgba(255,102,121,.7); }
+
+/* Seleção de WIN/LOSS: além da cor, um anel próprio e a superfície mais
+   acesa. O anel é `box-shadow`, não borda, para não deslocar um pixel. */
+.showcase-buttons button.w[aria-pressed="true"] {
+  border-color: var(--green);
+  background: linear-gradient(145deg, #1f6b4a, #0b2418);
+  box-shadow:
+    0 0 0 2px var(--green),
+    0 10px 0 var(--panel-deep),
+    0 18px 28px rgba(0,0,0,.45),
+    inset 0 2px 0 rgba(255,255,255,.22);
+}
+.showcase-buttons button.l[aria-pressed="true"] {
+  border-color: var(--red);
+  background: linear-gradient(145deg, #7d2536, #240810);
+  box-shadow:
+    0 0 0 2px var(--red),
+    0 10px 0 var(--panel-deep),
+    0 18px 28px rgba(0,0,0,.45),
+    inset 0 2px 0 rgba(255,255,255,.22);
+}
+
+/* Confirmação do COPY: um pulso curto no próprio botão. Sem toast, sem
+   modal, sem trocar o texto. */
+.showcase-buttons button.is-copied {
+  border-color: var(--blue);
+  box-shadow:
+    0 0 0 2px var(--blue),
+    0 10px 0 var(--panel-deep),
+    0 18px 28px rgba(0,0,0,.45),
+    inset 0 2px 0 rgba(255,255,255,.3);
+}
+
+/* Acabamento REFINED FLAT: sem a saliência de 10px, sem o relevo duplo
+   e sem gradiente forte. Só a superfície, uma borda e uma sombra rasa —
+   as cores semânticas de WIN e LOSS continuam as mesmas. */
+.showcase-buttons.flat button {
+  background: var(--btn-neutral-1);
+  box-shadow: 0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.showcase-buttons.flat button.w { background: var(--btn-win-1); }
+.showcase-buttons.flat button.l { background: var(--btn-loss-1); }
+.showcase-buttons.flat button:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.showcase-buttons.flat button.w[aria-pressed="true"] {
+  background: #1f6b4a;
+  box-shadow: 0 0 0 2px var(--green), inset 0 1px 0 rgba(255,255,255,.07);
+}
+.showcase-buttons.flat button.l[aria-pressed="true"] {
+  background: #7d2536;
+  box-shadow: 0 0 0 2px var(--red), inset 0 1px 0 rgba(255,255,255,.07);
+}
+.showcase-buttons.flat button.is-copied {
+  box-shadow: 0 0 0 2px var(--blue), inset 0 1px 0 rgba(255,255,255,.07);
+}
+
+/* O status acompanha a cor da seleção pela moldura e pelo ponto. O texto
+   e o número não são tocados — nem no conteúdo, nem na cor. */
+.showcase-status.is-loss { border-color: rgba(255,102,121,.24); background: rgba(255,102,121,.05); }
+.showcase-status.is-loss > i,
+.showcase-status.is-loss span i { background: var(--red); }
 
 .cta-strip {
   padding: 34px 0;
@@ -1140,15 +1434,40 @@ section { scroll-margin-top: 108px; }
 .intel-head strong { font-size: var(--fs-sm); }
 .intel-head small { color: var(--muted-2); font-size: var(--fs-2xs); }
 .filter-pills { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 7px; }
-.filter-pills span {
+/* O peso 800 vale para as quatro, não só para a escolhida: era ele que
+   fazia a pílula ativa ficar mais larga que as outras, e a largura
+   mudava de lugar a cada seleção. Agora a escolha se anuncia por
+   preenchimento, contraste e elevação — nada que mexa na caixa. */
+.filter-pills button {
+  min-height: 34px;
   padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted-2);
   background: var(--surface);
+  font-family: inherit;
   font-size: var(--fs-3xs);
+  font-weight: 800;
+  cursor: pointer;
 }
-.filter-pills .active { color: var(--on-blue); background: var(--blue); border-color: var(--blue); font-weight: 800; }
+.filter-pills button[aria-pressed="true"] {
+  color: var(--on-blue);
+  background: var(--blue);
+  border-color: var(--blue);
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.filter-pills button:hover:not([aria-pressed="true"]) { color: var(--text-2); background: var(--surface-2); border-color: var(--line-strong); }
+
+/* A regra de transição destes grupos define só a duração, então a
+   propriedade ficava em `all` — e o anel de foco entrava animando ao
+   longo de 180ms, aparecendo primeiro com 1px. Limitando a lista, o
+   contorno surge inteiro no primeiro quadro e só a superfície transita. */
+.filter-pills button,
+.lock-options button {
+  transition-property: color, background-color, border-color, box-shadow, transform;
+}
 .metric-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
 .metric-grid > div {
   min-height: 86px;
@@ -1440,7 +1759,7 @@ section { scroll-margin-top: 108px; }
 }
 .form-assurances div { display: flex; flex-direction: column; gap: 4px; }
 .form-assurances strong { font-size: var(--fs-xs); }
-.form-assurances small { color: var(--muted-2); font-size: var(--fs-3xs); }
+.form-assurances small { color: var(--muted-2); font-size: var(--fs-xs); }
 .form-company-note {
   margin-top: 24px;
   padding-top: 24px;
@@ -1651,7 +1970,14 @@ input:focus, select:focus, textarea:focus {
   background: rgba(255,200,81,.08);
   font-weight: 900;
 }
-.final-disclaimer p { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.65; }
+.final-disclaimer p {
+  margin: 0;
+  max-width: var(--measure-reading);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
 
 footer {
   min-height: 145px;
@@ -1948,6 +2274,40 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .header-link:hover,
   .floating-cta-btn:hover,
   .interest-tab:hover { transform: none; }
+
+  /* O site.js não chega a marcar nada como `.reveal` quando o sistema
+     pede menos movimento. Estas regras cobrem o caso em que a preferência
+     muda depois da página já ter carregado: o conteúdo fica onde está,
+     inteiro e visível, em vez de congelar meio transparente. */
+  .reveal,
+  .reveal--heading,
+  .reveal--up,
+  .reveal--left,
+  .reveal--right {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+    transition: none !important;
+    animation: none !important;
+    will-change: auto !important;
+  }
+  /* A barra de leitura continua acompanhando a rolagem — ela informa,
+     não decora — mas sem suavização: o traço vai direto para a posição. */
+  .reading-progress > span { transition: none !important; }
+
+  /* Fichas W/L: a regra geral acima encurta a DURAÇÃO das animações, mas
+     não o `animation-delay` — uma ficha com 600ms de atraso ficaria seis
+     décimos invisível. Aqui a animação é cancelada por inteiro, então
+     mesmo que a preferência mude com a página já aberta e a função já
+     tenha marcado os contêineres, nenhuma ficha fica presa apagada. */
+  .seq-fichas.em-sequencia > i,
+  .seq-fichas.em-sequencia:not(.tocando) > i,
+  .seq-fichas.em-sequencia.tocando > i {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* === Simulação de risco e compatibilidade ========================== */
@@ -2001,16 +2361,27 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   letter-spacing: .14em;
   text-transform: uppercase;
 }
+/* Nível 3 — detalhe técnico. Secundário na cor e no tamanho, mas nunca
+   abaixo de 14px nem de 1.55 de entrelinha, e sem opacidade no elemento
+   inteiro: quem quiser conferir os números consegue ler. */
 .sim-conditions p {
   margin: 0;
-  max-width: 80ch;
+  max-width: var(--measure-reading);
   color: var(--muted-2);
   font-size: var(--fs-2xs);
-  line-height: 1.7;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .sim-cta { margin-top: 32px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
-.sim-legal { margin: 0; max-width: 72ch; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
+.sim-legal {
+  margin: 0;
+  max-width: var(--measure-reading);
+  color: var(--muted-2);
+  font-size: var(--fs-2xs);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
 
 .compat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
 .compat-grid article {
@@ -2176,8 +2547,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .participation-grid article:active,
 .session-cards article:active { transform: scale(.99); }
 
-.filter-pills span:active,
-.lock-options span:active,
+.filter-pills button:active,
+.lock-options button:active,
 .mini-actions span:active,
 .status-chip:active { transform: scale(.94); }
 
@@ -2188,7 +2559,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 /* Transição curta o bastante para o toque parecer instantâneo. */
 .button, .header-link, .submit-button, .floating-cta-btn, .step-next, .step-back,
 .interest-tab, .exclusive-card, .intel-card, .participation-grid article,
-.session-cards article, .filter-pills span, .lock-options span, .mini-actions span,
+.session-cards article, .filter-pills button, .lock-options button, .mini-actions span,
 .status-chip, .scroll-top, .hamburger-btn, .showcase-buttons button {
   transition-duration: .18s;
   -webkit-tap-highlight-color: transparent;
@@ -2301,6 +2672,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   --card-2: rgba(8,12,18,.96);
   --brilho: rgba(255,255,255,.045);
   --brilho-forte: rgba(255,255,255,.4);
+  --card-border: rgba(255,255,255,.17);
+  --card-border-strong: rgba(255,255,255,.32);
+  --card-shadow-rest: 0 1px 2px rgba(0,0,0,.34), 0 10px 26px rgba(0,0,0,.26);
+  --card-shadow-hover: 0 3px 8px rgba(0,0,0,.4), 0 22px 46px rgba(0,0,0,.36);
+  --card-topo: rgba(255,255,255,.055);
   color: var(--text);
 }
 [data-tema="claro"] .flow-board,
@@ -2334,8 +2710,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .compat-grid article:hover, .sim-stat:hover, .form-assurances article:hover,
 .operations-points article:hover, .flow-rules article:hover {
   transform: translateY(-5px);
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-md);
+  border-color: var(--card-border-strong);
+  box-shadow: var(--card-shadow-hover), inset 0 1px 0 var(--card-topo);
 }
 /* O card da marca ganha a cor da marca ao passar o mouse. */
 .sim-stat.good:hover, .participation-grid article.featured:hover,
@@ -2356,15 +2732,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
    respiro. Agora a mesma informação vira três cards com um número
    grande cada, que é o que a pessoa lê primeiro ao passar o olho. */
 
+/* Nível 1 — abertura da simulação. Já vinha em 62ch, abaixo do limite:
+   a medida não é alargada, só passa a ter teto explícito. */
 .sim-lead {
-  max-width: 62ch;
+  max-width: min(62ch, var(--measure-reading));
   margin: 0 0 40px;
   color: var(--text);
   font-family: Manrope, Inter, sans-serif;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lead);
   font-weight: 600;
-  line-height: 1.6;
+  line-height: var(--leading-body);
   letter-spacing: -.015em;
+  text-wrap: pretty;
 }
 
 .sim-passos {
@@ -2412,10 +2791,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 }
 .sim-nota p {
   margin: 0;
-  max-width: 78ch;
+  max-width: var(--measure-reading);
   color: var(--text-2);
-  font-size: var(--fs-sm);
-  line-height: 1.7;
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 .sim-nota strong { color: var(--text); }
 
@@ -2515,9 +2895,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 /* === A matemática por trás ========================================= */
 
 .prova-section { display: grid; gap: 24px; }
-.prova-abertura, .prova-bloco, .prova-motor, .prova-fecho { display: grid; gap: 16px; max-width: 78ch; }
+/* Ritmo vertical: o intervalo entre parágrafos deste bloco longo passa a
+   ser pouco maior que uma linha, para separar sem abrir buraco. */
+.prova-abertura, .prova-bloco, .prova-motor, .prova-fecho {
+  display: grid; gap: 21px; max-width: var(--measure-reading);
+}
 .prova-abertura p, .prova-bloco p, .prova-motor p, .prova-fecho p {
-  margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.75;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 .prova-bloco strong, .prova-fecho strong, .prova-motor strong { color: var(--text); }
 
@@ -2562,7 +2950,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
     linear-gradient(150deg, var(--card-1), var(--card-2));
   transition: transform .24s cubic-bezier(.16,.8,.24,1), border-color .24s, box-shadow .24s;
 }
-.prova-destaque:hover { transform: translateY(-4px); border-color: rgba(255,122,26,.5); box-shadow: var(--shadow-md); }
+.prova-destaque:hover { transform: translateY(-4px); border-color: rgba(255,122,26,.5); box-shadow: var(--card-shadow-hover); }
 .prova-destaque b {
   font-family: Manrope, sans-serif;
   font-size: clamp(2.6rem, 6vw, 4rem);
@@ -2608,7 +2996,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   background: linear-gradient(150deg, var(--card-1), var(--card-2));
   transition: transform .24s cubic-bezier(.16,.8,.24,1), border-color .24s, box-shadow .24s;
 }
-.seq-card:hover { transform: translateY(-5px); border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+.seq-card:hover { transform: translateY(-5px); border-color: var(--card-border-strong); box-shadow: var(--card-shadow-hover), inset 0 1px 0 var(--card-topo); }
 .seq-card.destaque { border-color: rgba(255,122,26,.32); }
 .seq-card.destaque:hover { border-color: rgba(255,122,26,.55); }
 .seq-rotulo {
@@ -2628,6 +3016,31 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .seq-fichas i.w { color: var(--green-text); background: rgba(41,217,154,.14); border: 1px solid rgba(41,217,154,.3); }
 .seq-fichas i.l { color: var(--red-text); background: rgba(255,102,121,.1); border: 1px solid rgba(255,102,121,.24); }
 .seq-card:hover .seq-fichas i.w { transform: translateY(-3px); }
+
+/* === Entrada das fichas, operação por operação =====================
+   As dez fichas de cada sequência aparecem da esquerda para a direita,
+   como se as operações estivessem acontecendo naquele momento. O estado
+   escondido só existe depois que o `site.js` marca o contêiner com
+   `em-sequencia` — sem JavaScript, ou com movimento reduzido, a função
+   nem roda e nada aqui chega a valer.
+
+   O escalonamento é `animation-delay` calculado a partir do índice da
+   ficha DENTRO do próprio contêiner: cada card conta do zero, nenhum
+   depende da posição na página. Só `opacity` e `transform` se movem,
+   então nada reflui, nada empurra ficha nenhuma e a caixa não muda. */
+.seq-fichas.em-sequencia:not(.tocando) > i { opacity: 0; }
+.seq-fichas.em-sequencia.tocando > i {
+  /* `backwards` segura o estado inicial durante o atraso. Sem
+     `forwards`: ao terminar, a ficha volta ao estilo de base — opaca,
+     sem transform — e o `transition: transform .2s` do hover continua
+     valendo, sem herdar o atraso da entrada. */
+  animation: ficha-entra .34s var(--reveal-ease) backwards;
+  animation-delay: calc(var(--ficha-atraso, 140ms) + var(--ficha-i, 0) * var(--ficha-passo, 52ms));
+}
+@keyframes ficha-entra {
+  from { opacity: 0; transform: translateX(-8px) scale(.86); }
+  to   { opacity: 1; transform: none; }
+}
 
 .seq-valor {
   margin-top: auto;
@@ -2662,7 +3075,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   border-radius: 4px 21px 21px 4px;
   background: var(--surface);
 }
-.prova-nota p { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.7; }
+.prova-nota p {
+  margin: 0;
+  max-width: var(--measure-reading);
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
 .prova-sem { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
 .prova-sem li { position: relative; padding-left: 24px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
 .prova-sem li::before { content: "\2014"; position: absolute; left: 0; color: var(--red); font-weight: 900; }
@@ -2709,4 +3129,274 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   .seq-grid, .prova-fatores { grid-template-columns: 1fr; }
   .prova-destaque { grid-template-columns: 1fr; gap: 16px; padding: 26px 22px; }
   .prova-nota { padding: 22px; }
+}
+
+/* === Superfície de repouso dos cards ===============================
+   Um card precisa ser reconhecido como superfície independente antes
+   de qualquer hover. Aqui ficam borda, sombra em repouso e o brilho
+   superior; o hover apenas reforça o que já existe.
+
+   Os fundos com significado — verde de "faz", vermelho de "não faz",
+   laranja de marca, radial das caixas de destaque — não são tocados:
+   suas regras têm especificidade maior e continuam vencendo. */
+.exclusive-card,
+.intel-card,
+.participation-grid article,
+.session-cards article,
+.boundaries-grid article,
+.compat-grid article,
+.sim-stat,
+.sim-passos article,
+.seq-card,
+.operations-points article,
+.flow-rules article,
+.form-assurances article,
+.prova-destaque,
+.prova-tabela-caixa,
+.sim-significa {
+  border-color: var(--card-border);
+  box-shadow: var(--card-shadow-rest), inset 0 1px 0 var(--card-topo);
+}
+
+/* Estes quatro repousavam em --surface (alpha .035) e praticamente
+   desapareciam. Ganham a mesma superfície dos demais. Dentro do quadro
+   de fluxo, que é escuro nos dois temas, os tokens já vêm reescopados. */
+.operations-points article,
+.flow-rules article,
+.form-assurances article,
+.boundaries-grid article {
+  background: linear-gradient(150deg, var(--card-1), var(--card-2));
+}
+
+/* As bordas de acento continuam mandando sobre a borda neutra. */
+.sim-passos article:nth-child(3) { border-color: rgba(255,122,26,.28); }
+.seq-card.destaque { border-color: rgba(255,122,26,.32); }
+.prova-destaque { border-color: rgba(255,122,26,.3); }
+.sim-significa { border-color: rgba(255,122,26,.3); }
+.participation-grid article.featured { border-color: rgba(255,122,26,.3); }
+.exclusive-card.hero-feature { border-color: rgba(86,183,255,.24); }
+.boundaries-grid .does { border-color: rgba(41,217,154,.28); }
+.boundaries-grid .does-not { border-color: rgba(255,102,121,.26); }
+
+/* === Tipografia de card (SITE-UX-02) ===============================
+   O texto explicativo dentro de um card é lido em coluna estreita e em
+   trechos curtos, então usa entrelinha própria — mais apertada que a do
+   texto corrido, mais folgada que a de um rótulo. Fundo, borda, sombra,
+   raio e dimensão dos cards não são tocados aqui. */
+.exclusive-card > p, .exclusive-card li,
+.intel-card li,
+.session-cards p,
+.boundaries-grid li,
+.participation-grid p,
+.compat-grid p,
+.sim-passos p,
+.sim-placar span,
+.prova-destaque span,
+.prova-sem li,
+.prova-fatores li,
+.seq-card p,
+.operations-points p,
+.flow-rules span,
+.form-assurances small {
+  max-width: var(--measure-reading);
+  line-height: var(--leading-card);
+  text-wrap: pretty;
+}
+
+/* Título de card: nunca deixa uma palavra sozinha na última linha. */
+.exclusive-card h3,
+.intel-head strong,
+.participation-grid h3,
+.session-cards strong,
+.sim-passos strong,
+.compat-grid strong,
+.boundaries-grid strong,
+.prova-titulo {
+  line-height: var(--leading-heading);
+  text-wrap: balance;
+}
+
+/* Os números que contam a história alinham em coluna: dígito sob dígito,
+   para que um valor seja comparado com o de baixo sem reler. */
+.sim-num, .sim-stat b, .sim-placar b,
+.prova-conta strong, .prova-conta span, .prova-conta em,
+.prova-destaque b, .prova-fracao b, .seq-valor,
+.metric-grid b, .prova-tabela td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* No celular a abertura desce um passo — continua acima do corpo e
+   nunca abaixo de 16px. */
+@media (max-width: 640px) {
+  .hero-description,
+  .section-heading p,
+  .flow-intro p,
+  .operations-copy > p,
+  .separation-copy p,
+  .form-intro > p,
+  .sim-lead {
+    font-size: var(--fs-base);
+  }
+}
+
+/* Abaixo de 1080px o bloco do cadastro passa a ser centralizado; a
+   caixa de leitura precisa acompanhar, senão o texto encosta à esquerda
+   dentro de um bloco centralizado. */
+@media (max-width: 1080px) {
+  .form-intro > p { margin-inline: auto; }
+}
+
+/* === Seção do trader iniciante (SITE-COPY-INICIANTE-R1) =============
+   O conteúdo desta seção passou de frases curtas para uma demonstração
+   com cálculos passo a passo. O layout antigo, desenhado para três
+   frases, comprimia tudo. Aqui os cards ganham coluna própria de
+   leitura, as linhas de cálculo ganham destaque e os blocos novos
+   herdam a mesma superfície dos cards já aprovados na SITE-UX-01. */
+
+/* Introdução: continuação do `.sim-lead`, na mesma medida de leitura. */
+.sim-intro {
+  display: grid;
+  gap: 18px;
+  max-width: var(--measure-reading);
+  margin: -18px 0 40px;
+}
+.sim-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+/* Os três cards deixam de ser uma faixa de três colunas apertadas: em
+   telas largas continuam lado a lado, mas com largura mínima suficiente
+   para o cálculo não quebrar no meio. */
+.sim-passos {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+.sim-passos article { gap: 14px; }
+.sim-passos article > p { max-width: var(--measure-reading); }
+.sim-passo-alvo { border-color: rgba(255,122,26,.28); }
+
+/* Linha de cálculo: monoespaçada, tabular e destacada do texto, para o
+   leitor achar a conta sem reler o parágrafo. */
+.sim-conta {
+  margin: 2px 0 !important;
+  padding: 11px 15px;
+  border-left: 3px solid var(--orange);
+  border-radius: 4px 12px 12px 4px;
+  background: var(--surface);
+  color: var(--text) !important;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: var(--fs-xs) !important;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* Listas de reforço dentro de card e do bloco comparativo. */
+.sim-lista {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 9px;
+}
+.sim-lista li {
+  position: relative;
+  padding-left: 20px;
+  max-width: var(--measure-reading);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--leading-card);
+}
+.sim-lista li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: .55em;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--orange);
+}
+
+/* Abertura da comparação, logo antes dos dois números. */
+.sim-compara { margin: 44px 0 20px; }
+.sim-compara h3 {
+  margin: 0 0 14px;
+  max-width: var(--measure-reading);
+  font-size: var(--fs-xl);
+  line-height: var(--leading-heading);
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+.sim-compara .sim-lista li::before { background: var(--blue); }
+
+/* Parágrafos de interpretação dentro do card de impacto. */
+.sim-explica {
+  margin: 0;
+  max-width: var(--measure-reading);
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+/* Bloco "O que o Gerenciador PRO faz": mesma superfície dos cards. */
+.sim-motor {
+  margin: 34px 0;
+  padding: 32px 34px;
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--card-border);
+  border-radius: 21px;
+  background: linear-gradient(150deg, var(--card-1), var(--card-2));
+  box-shadow: var(--card-shadow-rest), inset 0 1px 0 var(--card-topo);
+}
+.sim-motor h3 {
+  margin: 0 0 4px;
+  max-width: var(--measure-reading);
+  font-size: var(--fs-lg);
+  line-height: var(--leading-heading);
+  letter-spacing: -.03em;
+  text-wrap: balance;
+}
+.sim-motor p {
+  margin: 0;
+  max-width: var(--measure-reading);
+  color: var(--muted);
+  font-size: var(--fs-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+.sim-motor .sim-remate { color: var(--text-2); }
+.sim-motor .sim-remate strong { color: var(--orange-2); }
+
+/* Parâmetros da simulação em grade compacta, dentro do quadro técnico. */
+.sim-parametros {
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.sim-parametros li {
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .sim-intro { margin: -10px 0 32px; }
+  .sim-motor { padding: 26px 22px; }
+  .sim-compara { margin: 34px 0 18px; }
+  .sim-compara h3 { font-size: var(--fs-lg); }
 }

@@ -606,13 +606,98 @@
     });
   }
 
+  /* Quatro recursos daqui para baixo dependiam de IntersectionObserver sem
+     verificar se ela existe. Num navegador sem a API a primeira construção
+     lançava ReferenceError no fluxo principal deste arquivo, e tudo o que
+     vinha depois — botão de voltar ao topo, CTA flutuante, contadores do
+     hero e os cards de participação que levam ao cadastro — deixava de ser
+     inicializado. A detecção agora é feita uma vez só, aqui. */
+  const possuiIntersectionObserver = "IntersectionObserver" in window;
+
+  /* `isIntersecting` informa a interseção geométrica com a janela; o
+     threshold controla os pontos adicionais de notificação. Este auxiliar
+     reproduz a mesma interseção geométrica com getBoundingClientRect, nas
+     quatro bordas, contando o encosto como interseção — igual à API. */
+  const intersecta = (el) => {
+    const r = el.getBoundingClientRect();
+    const alturaJanela = window.innerHeight || document.documentElement.clientHeight;
+    const larguraJanela = window.innerWidth || document.documentElement.clientWidth;
+    return r.bottom >= 0 && r.top <= alturaJanela
+        && r.right >= 0 && r.left <= larguraJanela;
+  };
+
+  // Uma passagem por quadro: o evento bruto só marca que há trabalho, e a
+  // leitura da geometria com a escrita da classe acontecem juntas depois.
+  const porQuadro = (fn) => {
+    let agendado = false;
+    return () => {
+      if (agendado) return;
+      agendado = true;
+      requestAnimationFrame(() => { agendado = false; fn(); });
+    };
+  };
+
+  /* Uma única forma de perguntar "este elemento está na tela?". Onde a API
+     existe, é a API que responde, com o mesmo threshold de antes e nenhum
+     listener extra. Onde não existe, a resposta vem da posição real do
+     elemento — nunca de um valor fixo de scrollY. */
+  const acompanharVisibilidade = (alvo, limiar, aoMudar) => {
+    if (possuiIntersectionObserver) {
+      /* O estado é o `isIntersecting` da própria API. Os thresholds de
+         cada alvo continuam os mesmos; o 0 entra na lista para que exista
+         ponto de notificação também na borda geométrica — sem ele, entre a
+         travessia do threshold e a saída total nenhum callback chega e o
+         estado guardado fica desatualizado. */
+      const limites = limiar > 0 ? [0, limiar] : [0];
+      new IntersectionObserver(([entrada]) => aoMudar(entrada.isIntersecting), { threshold: limites })
+        .observe(alvo);
+      return;
+    }
+    const medir = () => aoMudar(intersecta(alvo));
+    const agendar = porQuadro(medir);
+    window.addEventListener("scroll", agendar, { passive: true });
+    window.addEventListener("resize", agendar, { passive: true });
+    medir();
+  };
+
   const siteHeader = document.querySelector(".site-header");
   const launchBar = document.querySelector(".launch-bar");
   if (siteHeader && launchBar) {
-    new IntersectionObserver(
-      ([entry]) => siteHeader.classList.toggle("scrolled", !entry.isIntersecting),
-      { threshold: 0 }
-    ).observe(launchBar);
+    const aplicarHeader = (visivel) => siteHeader.classList.toggle("scrolled", !visivel);
+    acompanharVisibilidade(launchBar, 0, aplicarHeader);
+
+    /* Abrir a página já num fragmento (#cadastro, #prova, …) deixava o
+       header sem `.scrolled` mesmo com a launch bar dezesseis mil pixels
+       acima: o navegador aplica o deslocamento até a âncora depois de o
+       observer ter calculado o estado inicial, e como a interseção nunca
+       chega a mudar depois disso, nenhum callback corrige o engano. O
+       mesmo vale para voltar/avançar pelo histórico e para o retorno do
+       cache de navegação.
+
+       A rolagem comum continua inteiramente por conta do observer nativo.
+       Isto aqui são três momentos discretos de navegação — nenhum listener
+       contínuo de scroll ou resize é criado neste caminho —, e cada um só
+       remede a posição real da launch bar, uma vez por quadro. */
+    if (possuiIntersectionObserver) {
+      const medirHeader = () => aplicarHeader(intersecta(launchBar));
+      const sincronizar = porQuadro(medirHeader);
+      /* Mede na hora e reconfere no quadro seguinte: a leitura imediata
+         garante um valor correto mesmo se o `requestAnimationFrame` demorar
+         sob carga, e a reconferência pega o caso em que o navegador termina
+         de deslocar até a âncora ainda dentro do mesmo quadro. Eventos
+         repetidos continuam coalescidos pelo agendador. */
+      const sincronizarJa = () => { medirHeader(); sincronizar(); };
+      window.addEventListener("load", sincronizarJa);
+      window.addEventListener("pageshow", sincronizarJa);
+      window.addEventListener("hashchange", sincronizarJa);
+      // Em parte das cargas o navegador só aplica o deslocamento até a
+      // âncora depois do `load` — a altura do documento ainda está
+      // crescendo enquanto o dicionário de idioma chega. Esta é uma
+      // conferência de disparo único: corrige a primeira rolagem, se
+      // desliga sozinha e devolve o controle ao observer.
+      window.addEventListener("scroll", sincronizarJa, { once: true, passive: true });
+      sincronizarJa();
+    }
   }
 
   const scrollTopBtn = document.getElementById("scroll-top");
@@ -638,16 +723,21 @@
     let cadastroVisible = false;
     const update = () => floatingCta.classList.toggle("visible", !heroVisible && !cadastroVisible);
 
-    new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; update(); }, { threshold: 0.15 })
-      .observe(heroSection);
-    new IntersectionObserver(([e]) => { cadastroVisible = e.isIntersecting; update(); }, { threshold: 0.1 })
-      .observe(cadastroSection);
+    // A regra não muda: o CTA só aparece quando nem o hero nem o cadastro
+    // estão na tela. Os dois thresholds continuam os mesmos.
+    acompanharVisibilidade(heroSection, 0.15, (v) => { heroVisible = v; update(); });
+    acompanharVisibilidade(cadastroSection, 0.1, (v) => { cadastroVisible = v; update(); });
   }
 
   if (!prefersReducedMotion()) {
     const proofNumbers = document.querySelectorAll(".hero-proof b");
     const proofContainer = document.querySelector(".hero-proof");
-    if (proofNumbers.length && proofContainer) {
+    /* Os contadores são decorativos e não ganham fallback: sem a API não
+       há como saber quando o bloco entra na tela, e forçar a contagem
+       zeraria os números na frente de quem já os está lendo. Sem
+       IntersectionObserver eles simplesmente ficam nos valores finais que
+       já vêm no HTML — ninguém vê um zero. */
+    if (proofNumbers.length && proofContainer && possuiIntersectionObserver) {
       const countUp = (el) => {
         const target = parseInt(el.textContent, 10);
         if (!Number.isFinite(target) || target <= 0) return;
