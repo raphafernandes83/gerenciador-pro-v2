@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260817-1">
+  <link rel="stylesheet" href="styles.css?v=20260819-2">
   <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
   <script defer="" src="config.js?v=20260803-2"></script>
   <script defer="" src="script.js?v=20260819-1"></script>
@@ -275,28 +275,28 @@
         <h2 data-i18n="simulacao.02">At the start you will still alternate a lot of Wins and Losses. That is part of learning.</h2>
       </div>
 
-      <p class="sim-lead" data-i18n="simulacao.03">This section was built to represent the beginner trader who is still learning to read charts, test strategies and control their own decisions.</p>
+      <p class="sim-lead sim-lead-destaque" data-i18n="simulacao.03">This section was built to represent the beginner trader who is still learning to read charts, test strategies and control their own decisions.</p>
 
       <div class="sim-intro">
         <p data-i18n="simulacao.25">It is the phase where some analyses work out, others do not, and there is still not enough consistency to predict the next operation.</p>
-        <p data-i18n="simulacao.26">To represent that moment mathematically, we use a hit rate of 50% — the equivalent of a coin's probability.</p>
+        <p class="sim-ponto sim-ponto-neutro" data-i18n="simulacao.26">To represent that moment mathematically, we use a hit rate of 50% — the equivalent of a coin's probability.</p>
         <p data-i18n="simulacao.27">That does not mean every beginner gets exactly half of their operations right. The 50% represents a neutral scenario: a trader who has not yet developed a consistent edge over the market.</p>
-        <p data-i18n="simulacao.28">This beginner's biggest problem is not simply being wrong. It is not knowing what to do with the money after a run of Losses.</p>
-        <p data-i18n="simulacao.29">Without a plan calculated in advance, they may raise the next entry on impulse, go past their own risk limit and try to recover the whole loss in a single operation.</p>
+        <p class="sim-ponto sim-ponto-risco" data-i18n="simulacao.28">This beginner's biggest problem is not simply being wrong. It is not knowing what to do with the money after a run of Losses.</p>
+        <p class="sim-consequencia" data-i18n="simulacao.29">Without a plan calculated in advance, they may raise the next entry on impulse, go past their own risk limit and try to recover the whole loss in a single operation.</p>
       </div>
 
       <div class="sim-passos">
-        <article>
+        <article class="sim-passo-risco">
           <span class="sim-num" data-i18n="simulacao.30">$10.35</span>
-          <strong data-i18n="simulacao.17">Lost $9? To recover it all in a single Win, you would have to risk $10.35.</strong>
+          <strong class="sim-titulo-card" data-i18n="simulacao.17">Lost $9? To recover it all in a single Win, you would have to risk $10.35.</strong>
           <p data-i18n="simulacao.04">At an 87% payout, a winning $9 entry produces only $7.83 of profit. That means repeating the same $9 entry does not recover a $9 Loss.</p>
           <p data-i18n="simulacao.31">To generate roughly $9 of profit in a single operation, the next entry would have to rise to:</p>
           <p class="sim-conta" data-i18n="simulacao.32">$9 ÷ 0.87 = $10.35</p>
-          <p data-i18n="simulacao.33">You lose $9 when you are wrong, but gain only $7.83 when you are right. That is why, with flat entries, the loss grows faster than the recovery.</p>
+          <p class="sim-resumo sim-resumo-risco" data-i18n="simulacao.33">You lose $9 when you are wrong, but gain only $7.83 when you are right. That is why, with flat entries, the loss grows faster than the recovery.</p>
         </article>
-        <article>
+        <article class="sim-passo-deficit">
           <span class="sim-num" data-i18n="simulacao.34">5 Wins</span>
-          <strong data-i18n="simulacao.18">Four $9 Losses require five $9 Wins just to recover the loss.</strong>
+          <strong class="sim-titulo-card" data-i18n="simulacao.18">Four $9 Losses require five $9 Wins just to recover the loss.</strong>
           <p data-i18n="simulacao.05">Four Losses with flat $9 entries produce:</p>
           <p class="sim-conta" data-i18n="simulacao.35">4 × $9 = −$36</p>
           <p data-i18n="simulacao.36">Each Win with the same entry generates only $7.83 of profit. Even after four Wins, the recovered amount would be:</p>
@@ -307,10 +307,10 @@
         </article>
         <article class="sim-passo-alvo">
           <span class="sim-num" data-i18n="simulacao.41">2 Wins</span>
-          <strong data-i18n="simulacao.19">With Gerenciador PRO, the recovery is prepared for a target of two consecutive Wins.</strong>
+          <strong class="sim-titulo-card" data-i18n="simulacao.19">With Gerenciador PRO, the recovery is prepared for a target of two consecutive Wins.</strong>
           <p data-i18n="simulacao.06">Instead of keeping the same entry and waiting for five Wins to offset four Losses, or trying to recover everything in a single $10.35 entry, the system splits the recovery across two calculated entries.</p>
           <p data-i18n="simulacao.42">Each new value takes into account the payout, the accumulated deficit, the initial hand, the bankroll size, the stop-loss and the cycle's maximum limit.</p>
-          <p data-i18n="simulacao.43">When the cycle stays within the limits supported by the configuration, two consecutive Wins can offset the accumulated deficit and complete the planned recovery.</p>
+          <p class="sim-resumo sim-resumo-alvo" data-i18n="simulacao.43">When the cycle stays within the limits supported by the configuration, two consecutive Wins can offset the accumulated deficit and complete the planned recovery.</p>
           <ul class="sim-lista">
             <li data-i18n="simulacao.44">Without depending on five Wins to slowly rebuild what was lost.</li>
             <li data-i18n="simulacao.45">Without concentrating the whole recovery in a single aggressive operation.</li>
@@ -319,13 +319,13 @@
         </article>
       </div>
 
-      <div class="sim-compara">
+      <div class="sim-compara sim-compara-destaque">
         <h3 data-i18n="simulacao.47">We put both systems in front of the same beginner trader</h3>
         <ul class="sim-lista">
           <li data-i18n="simulacao.48">The trader did not become more experienced.</li>
           <li data-i18n="simulacao.49">The hit rate did not increase.</li>
           <li data-i18n="simulacao.50">The market did not get any easier.</li>
-          <li data-i18n="simulacao.51">The only thing that changed was the way the money is managed.</li>
+          <li class="sim-chave" data-i18n="simulacao.51">The only thing that changed was the way the money is managed.</li>
         </ul>
       </div>
 
@@ -353,7 +353,7 @@
           <div class="destaque"><b>49</b><span data-i18n="simulacao.23">out of every 100 sessions, with Gerenciador PRO</span></div>
         </div>
         <p class="sim-extra" data-i18n="simulacao.24">With flat entries, 65 out of every 100 sessions hit the stop-loss. With Gerenciador PRO, that number fell to 51.</p>
-        <p class="sim-extra" data-i18n="simulacao.55">That is 14 fewer stops in every 100 simulated sessions — a relative reduction of roughly 21.5% in the frequency of sessions that reached the loss limit.</p>
+        <p class="sim-extra sim-reducao" data-i18n="simulacao.55">That is 14 fewer stops in every 100 simulated sessions — a relative reduction of roughly 21.5% in the frequency of sessions that reached the loss limit.</p>
       </div>
 
       <div class="sim-motor">
@@ -363,7 +363,7 @@
         <p data-i18n="simulacao.57">It reduces decisions taken out of desperation, tracks the accumulated deficit, distributes the recovery need, respects the configured stop-loss and prepares the cycle for the moment when two consecutive Wins appear.</p>
         <p class="sim-remate" data-i18n="simulacao.58">It does not change the market's results. <strong>It changes the way those results affect your bankroll.</strong></p>
         <p data-i18n="simulacao.59">At an 87% payout, the mathematical expectancy of an entry only starts to turn positive once the hit rate goes past roughly 53.5%. Below that, no money management turns a strategy without an edge into a profitable strategy over the long run.</p>
-        <p data-i18n="simulacao.60">While the beginner trader studies, practises and builds consistency, Gerenciador PRO offers control, discipline and room to keep learning without letting desperation decide the next entry.</p>
+        <p class="sim-fecho" data-i18n="simulacao.60">While the beginner trader studies, practises and builds consistency, Gerenciador PRO offers control, discipline and room to keep learning without letting desperation decide the next entry.</p>
       </div>
 
       <div class="sim-conditions">

@@ -3394,9 +3394,184 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
   font-variant-numeric: tabular-nums;
 }
 
+/* Hierarquia de leitura da seção: cada cor tem uma função estável.
+   Vermelho = risco, azul = cenário neutro, laranja = método do produto
+   e verde = melhoria observada na simulação. Os realces ficam nos
+   ganchos e conclusões; o texto de sustentação continua calmo. */
+.simulation-section {
+  --sim-info-soft: rgba(86,183,255,.09);
+  --sim-info-line: rgba(86,183,255,.38);
+  --sim-risk-soft: rgba(255,102,121,.09);
+  --sim-risk-line: rgba(255,102,121,.38);
+  --sim-product-soft: rgba(255,122,26,.1);
+  --sim-product-line: rgba(255,122,26,.42);
+  --sim-success-soft: rgba(41,217,154,.09);
+  --sim-success-line: rgba(41,217,154,.38);
+  --sim-marker-orange: rgba(255,122,26,.28);
+  --sim-marker-green: rgba(41,217,154,.25);
+}
+[data-tema="claro"] .simulation-section {
+  --sim-info-soft: rgba(10,111,190,.08);
+  --sim-info-line: rgba(10,111,190,.32);
+  --sim-risk-soft: rgba(188,36,56,.07);
+  --sim-risk-line: rgba(188,36,56,.3);
+  --sim-product-soft: rgba(209,98,12,.08);
+  --sim-product-line: rgba(209,98,12,.34);
+  --sim-success-soft: rgba(13,122,85,.08);
+  --sim-success-line: rgba(13,122,85,.3);
+  --sim-marker-orange: rgba(209,98,12,.2);
+  --sim-marker-green: rgba(13,122,85,.18);
+}
+
+/* Primeiro gancho: parece uma conclusão editorial, não outro parágrafo. */
+.sim-lead-destaque {
+  position: relative;
+  padding: 18px 20px 18px 23px;
+  border: 1px solid var(--sim-product-line);
+  border-left: 4px solid var(--orange);
+  border-radius: 5px 16px 16px 5px;
+  background: linear-gradient(105deg, var(--sim-product-soft), transparent 78%);
+  color: var(--text-2) !important;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 var(--card-topo);
+}
+
+/* Dois pontos que precisam ser compreendidos antes dos cálculos. */
+.sim-intro .sim-ponto {
+  padding: 15px 17px;
+  border-left: 3px solid;
+  border-radius: 4px 13px 13px 4px;
+  color: var(--text-2);
+  font-weight: 700;
+}
+.sim-intro .sim-ponto-neutro {
+  border-color: var(--blue);
+  background: linear-gradient(100deg, var(--sim-info-soft), transparent 82%);
+}
+.sim-intro .sim-ponto-risco {
+  border-color: var(--red);
+  background: linear-gradient(100deg, var(--sim-risk-soft), transparent 82%);
+}
+.sim-intro .sim-consequencia {
+  color: var(--red-text);
+  font-weight: 700;
+}
+
+/* Os três cards viram uma narrativa visual: risco, déficit e solução. */
+.sim-passos article {
+  position: relative;
+  overflow: hidden;
+}
+.sim-passos article::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: var(--line-strong);
+}
+.sim-passos .sim-passo-risco::before { background: var(--yellow); }
+.sim-passos .sim-passo-deficit::before { background: var(--red); }
+.sim-passos .sim-passo-alvo::before { background: var(--orange); }
+.sim-passos .sim-passo-alvo {
+  background:
+    linear-gradient(145deg, var(--sim-product-soft), transparent 48%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+  box-shadow: 0 0 0 1px var(--sim-product-line), var(--card-shadow-rest), inset 0 1px 0 var(--card-topo);
+}
+.sim-titulo-card {
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+  line-height: 1.38;
+  text-wrap: balance;
+}
+.sim-resumo {
+  padding: 12px 14px;
+  border-left: 3px solid;
+  border-radius: 4px 11px 11px 4px;
+  color: var(--text-2) !important;
+  font-weight: 750;
+}
+.sim-resumo-risco {
+  border-color: var(--red);
+  background: var(--sim-risk-soft);
+}
+.sim-resumo-alvo {
+  border-color: var(--orange);
+  background: var(--sim-product-soft);
+}
+
+/* A comparação precisa ser lida como a regra do experimento. */
+.sim-compara-destaque {
+  padding: 25px 27px;
+  border: 1px solid var(--sim-info-line);
+  border-radius: 18px;
+  background: linear-gradient(110deg, var(--sim-info-soft), transparent 78%);
+  box-shadow: inset 0 1px 0 var(--card-topo);
+}
+.sim-compara-destaque h3 { color: var(--blue-text); }
+.sim-compara-destaque .sim-chave {
+  color: var(--text);
+  font-weight: 800;
+}
+.sim-compara-destaque .sim-chave::before {
+  width: 9px;
+  height: 9px;
+  background: var(--orange);
+  box-shadow: 0 0 0 4px var(--sim-product-soft);
+}
+
+/* Resultado principal: o ganho relativo recebe marca-texto e o card
+   positivo ganha presença sem esconder a referência de 35%. */
+.sim-stat.good {
+  border-color: var(--sim-product-line);
+  background:
+    linear-gradient(145deg, var(--sim-product-soft), transparent 55%),
+    linear-gradient(150deg, var(--card-1), var(--card-2));
+  box-shadow: 0 0 0 1px var(--sim-product-line), var(--card-shadow-rest);
+}
+.sim-frase strong,
+.sim-motor .sim-remate strong {
+  padding: 0 .08em;
+  color: var(--orange-2);
+  background: linear-gradient(transparent 58%, var(--sim-marker-orange) 58%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.sim-reducao {
+  padding: 14px 16px;
+  border: 1px solid var(--sim-success-line);
+  border-left: 4px solid var(--green);
+  border-radius: 5px 13px 13px 5px;
+  background: linear-gradient(100deg, var(--sim-success-soft), transparent 82%);
+  color: var(--green-text) !important;
+  font-weight: 750;
+}
+
+/* Fechamento comercial: benefício claro, com a promessa responsável
+   preservada no parágrafo matemático imediatamente anterior. */
+.sim-motor h3 {
+  color: var(--orange-2);
+  font-size: clamp(var(--fs-lg), 1.15rem + .7vw, var(--fs-xl));
+}
+.sim-motor .sim-fecho {
+  padding: 14px 16px;
+  border-left: 4px solid var(--green);
+  border-radius: 5px 13px 13px 5px;
+  background: linear-gradient(100deg, var(--sim-success-soft), transparent 82%);
+  color: var(--text-2);
+  font-weight: 750;
+}
+.sim-conditions > strong {
+  color: var(--blue-text);
+  font-family: var(--fonte-idioma, Manrope), Manrope, Inter, sans-serif;
+  font-size: var(--fs-xs);
+  letter-spacing: .1em;
+}
+
 @media (max-width: 640px) {
   .sim-intro { margin: -10px 0 32px; }
   .sim-motor { padding: 26px 22px; }
   .sim-compara { margin: 34px 0 18px; }
   .sim-compara h3 { font-size: var(--fs-lg); }
+  .sim-lead-destaque { padding: 16px 16px 16px 18px; }
+  .sim-compara-destaque { padding: 21px 18px; }
 }
