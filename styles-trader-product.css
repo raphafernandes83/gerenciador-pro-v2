@@ -1,5 +1,6 @@
 /* Gerenciador PRO — visual de produto para trading.
-   Camada estritamente visual: nenhum texto, chave i18n ou comportamento muda. */
+   Camada estritamente visual: nenhum texto, chave i18n ou comportamento muda.
+   O laranja fica reservado à marca e às ações principais de conversão. */
 
 :root {
   --trade-bg: #07090d;
@@ -10,8 +11,8 @@
   --trade-line-strong: rgba(193, 204, 218, .24);
   --trade-text: #f4f6f8;
   --trade-muted: #929eae;
-  --trade-orange: #ff7a1a;
-  --trade-orange-2: #ff9a43;
+  --trade-orange: #2fc7a1;
+  --trade-orange-2: #69dfc0;
   --trade-green: #29d99a;
   --trade-red: #ff6179;
   --trade-blue: #5b9cff;
@@ -27,8 +28,8 @@
   --trade-line-strong: rgba(23, 34, 49, .22);
   --trade-text: #101721;
   --trade-muted: #5c6877;
-  --trade-orange: #d95f09;
-  --trade-orange-2: #b84d00;
+  --trade-orange: #087e68;
+  --trade-orange-2: #086d5d;
   --trade-green: #087e58;
   --trade-red: #c7354c;
   --trade-blue: #246fc3;
@@ -40,7 +41,7 @@ html { background: var(--trade-bg); }
 body {
   color: var(--trade-text);
   background:
-    radial-gradient(circle at 78% 7%, rgba(255, 122, 26, .075), transparent 24%),
+    radial-gradient(circle at 78% 7%, rgba(47, 199, 161, .055), transparent 24%),
     radial-gradient(circle at 12% 40%, rgba(41, 217, 154, .035), transparent 24%),
     linear-gradient(180deg, var(--trade-bg), var(--trade-bg-2) 46%, var(--trade-bg));
   font-family: var(--fonte-idioma, Inter), Inter, Arial, sans-serif;
@@ -49,7 +50,7 @@ body {
 
 [data-tema="claro"] body {
   background:
-    radial-gradient(circle at 78% 7%, rgba(217, 95, 9, .07), transparent 24%),
+    radial-gradient(circle at 78% 7%, rgba(8, 126, 104, .05), transparent 24%),
     linear-gradient(180deg, #fafbfc, var(--trade-bg) 48%, #f8f9fb);
 }
 
@@ -64,7 +65,7 @@ body {
 
 .ambient-one { background: var(--trade-orange); opacity: .065; }
 .ambient-two { background: var(--trade-green); opacity: .035; }
-.reading-progress > span { background: linear-gradient(90deg, var(--trade-orange), var(--trade-green)); }
+.reading-progress > span { background: linear-gradient(90deg, var(--trade-blue), var(--trade-green)); }
 
 .launch-bar {
   min-height: 36px;
@@ -72,7 +73,8 @@ body {
   background: rgba(6, 8, 12, .94);
 }
 [data-tema="claro"] .launch-bar { background: rgba(250, 251, 252, .94); }
-.launch-bar strong, .launch-bar a { color: var(--trade-orange-2); }
+.launch-bar strong { color: var(--trade-muted); }
+.launch-bar a { color: var(--trade-orange-2); }
 .launch-pulse { background: var(--trade-green); box-shadow: 0 0 14px rgba(41, 217, 154, .52); }
 
 .site-header {
@@ -165,7 +167,7 @@ body {
   letter-spacing: .065em;
   text-transform: uppercase;
 }
-.hero .eyebrow.brand i { background: var(--trade-orange); box-shadow: 0 0 12px rgba(255, 122, 26, .45); }
+.hero .eyebrow.brand i { background: var(--trade-orange); box-shadow: 0 0 12px rgba(47, 199, 161, .42); }
 
 .hero h1 {
   margin: 25px 0 23px;
@@ -179,14 +181,14 @@ body {
 .hero h1 span {
   padding: 0;
   color: transparent;
-  background: linear-gradient(96deg, #fff0e2 0%, var(--trade-orange-2) 46%, #ff6b16 100%);
+  background: linear-gradient(96deg, #f4f6f8 0%, #b9e9dd 46%, var(--trade-orange-2) 100%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   box-shadow: none;
 }
 [data-tema="claro"] .hero h1 span {
-  background: linear-gradient(96deg, #7a2f00 0%, var(--trade-orange) 52%, #a94100 100%);
+  background: linear-gradient(96deg, #17212b 0%, var(--trade-orange) 52%, #086d5d 100%);
   background-clip: text;
   -webkit-background-clip: text;
 }
@@ -214,7 +216,7 @@ body {
 .command-center {
   overflow: hidden;
   border: 1px solid var(--trade-line-strong);
-  border-top-color: rgba(255, 154, 67, .44);
+  border-top-color: rgba(47, 199, 161, .4);
   border-radius: 16px;
   background: linear-gradient(150deg, rgba(19, 27, 38, .99), rgba(7, 11, 17, .995));
   box-shadow: var(--trade-shadow), inset 0 1px rgba(255,255,255,.045);
@@ -232,7 +234,7 @@ body {
 }
 .command-glow { background: var(--trade-orange); opacity: .075; }
 .command-topbar { border-color: var(--trade-line); }
-.command-brand > span { color: #171717; background: var(--trade-orange); }
+.command-brand > span { color: #171717; background: #ff7a1a; }
 .online-badge, .official-session, .guided-message { color: var(--trade-green); }
 .online-badge i, .guided-message i { background: var(--trade-green); box-shadow: 0 0 13px rgba(41,217,154,.52); }
 
@@ -243,7 +245,7 @@ body {
   background: rgba(143, 158, 178, .035);
 }
 .status-chip.official { color: var(--trade-green); border-color: rgba(41,217,154,.3); }
-.status-chip.cycles { color: var(--trade-orange-2); border-color: rgba(255,154,67,.3); }
+.status-chip.cycles { color: var(--trade-blue); border-color: rgba(91,156,255,.3); }
 .status-chip.guided { color: #d6dce4; }
 .status-chip.compound { color: var(--trade-muted); }
 
@@ -257,7 +259,7 @@ body {
 .command-summary strong,
 .plan-row > b { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .plan-head { color: var(--trade-muted); background: rgba(143, 157, 175, .055); }
-.plan-row.active { border-left-color: var(--trade-orange); background: rgba(255, 122, 26, .055); }
+.plan-row.active { border-left-color: var(--trade-green); background: rgba(41, 217, 154, .05); }
 .mini-actions .win { color: var(--trade-green); border-color: rgba(41,217,154,.4); }
 .mini-actions .loss { color: var(--trade-red); border-color: rgba(255,97,121,.4); }
 
@@ -322,7 +324,7 @@ body {
 .operations-copy h2::after,
 .separation-copy h2::after,
 .boundaries-copy h2::after,
-.form-intro h2::after { background: linear-gradient(90deg, var(--trade-orange), rgba(255,122,26,0)); }
+.form-intro h2::after { background: linear-gradient(90deg, var(--trade-green), rgba(41,217,154,0)); }
 
 .statement-copy [data-i18n="statement.03"],
 .comparison-section [data-i18n="comparativo.03"],
@@ -387,9 +389,9 @@ body {
 .metric-grid > article,
 .global-stats > article { border-color: var(--trade-line) !important; }
 .comparison-row:hover, .journal-row:hover { background: rgba(255,255,255,.02); }
-.comparison-header .pro-head { color: var(--trade-orange-2); background: rgba(255,122,26,.055); box-shadow: inset 0 -2px var(--trade-orange); }
+.comparison-header .pro-head { color: var(--trade-green); background: rgba(41,217,154,.045); box-shadow: inset 0 -2px var(--trade-green); }
 .comparison-row .sheet-cell { color: var(--trade-muted); background: rgba(0,0,0,.08); }
-.comparison-row .pro-cell { border-left-color: rgba(255,122,26,.22); background: rgba(255,122,26,.025); }
+.comparison-row .pro-cell { border-left-color: rgba(41,217,154,.2); background: rgba(41,217,154,.02); }
 
 .check, .good, .positivo, .win { color: var(--trade-green) !important; }
 .bad, .negativo, .loss, .l { color: var(--trade-red) !important; }
@@ -397,9 +399,9 @@ body {
 .sim-num, .sim-chave, .sim-resumo-alvo, .sim-compara-destaque, .sim-reducao { color: var(--trade-orange-2) !important; }
 .sim-ponto-neutro { border-color: var(--trade-blue) !important; }
 .sim-ponto-risco, .sim-passo-risco, .sim-resumo-risco { color: var(--trade-red) !important; border-color: rgba(255,97,121,.28) !important; }
-.sim-passo-alvo { border-color: rgba(255,122,26,.32) !important; }
+.sim-passo-alvo { border-color: rgba(41,217,154,.3) !important; }
 .sim-track, .split-track { background: rgba(147,160,178,.13) !important; }
-.sim-track > span, .split-range { background: linear-gradient(90deg, var(--trade-orange), var(--trade-green)) !important; }
+.sim-track > span, .split-range { background: linear-gradient(90deg, var(--trade-blue), var(--trade-green)) !important; }
 
 .seq-fichas span,
 .sheet-cell,
@@ -419,15 +421,15 @@ body {
 .guided-icon,
 .tab-icon {
   color: var(--trade-orange-2) !important;
-  border-color: rgba(255,122,26,.22) !important;
-  background: rgba(255,122,26,.055) !important;
+  border-color: rgba(91,156,255,.24) !important;
+  background: rgba(91,156,255,.055) !important;
 }
 .flow-branch.win-branch, .official-session { border-color: rgba(41,217,154,.28) !important; background: rgba(41,217,154,.045) !important; }
 .flow-branch.loss-branch { border-color: rgba(255,97,121,.28) !important; background: rgba(255,97,121,.045) !important; }
 
 .cta-strip {
-  border-block-color: rgba(255,122,26,.17);
-  background: radial-gradient(circle at 82% 45%, rgba(255,122,26,.09), transparent 28%), linear-gradient(120deg, #111821, #080c12);
+  border-block-color: rgba(41,217,154,.15);
+  background: radial-gradient(circle at 82% 45%, rgba(41,217,154,.065), transparent 28%), linear-gradient(120deg, #111821, #080c12);
 }
 .separation-section {
   border-block: 1px solid var(--trade-line);
@@ -447,10 +449,10 @@ body {
 [data-tema="claro"] .field textarea { background: #fff !important; }
 .field input:focus,
 .field select:focus,
-.field textarea:focus { border-color: var(--trade-orange) !important; box-shadow: 0 0 0 3px rgba(255,122,26,.1) !important; }
+.field textarea:focus { border-color: var(--trade-blue) !important; box-shadow: 0 0 0 3px rgba(91,156,255,.1) !important; }
 .step-dot.active { color: #151515 !important; background: var(--trade-orange) !important; }
 .step-dot.done { color: #101512 !important; background: var(--trade-green) !important; }
-.interest-tab.active { border-color: var(--trade-orange) !important; background: rgba(255,122,26,.07) !important; }
+.interest-tab.active { border-color: var(--trade-blue) !important; background: rgba(91,156,255,.065) !important; }
 .secure-badge { color: var(--trade-green); }
 
 .hero h1 span,
