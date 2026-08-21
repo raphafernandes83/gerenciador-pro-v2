@@ -3,7 +3,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A guided system for planning, recovery, risk control and operational discipline. Spreadsheets record. Gerenciador PRO leads.">
-  <meta name="theme-color" content="#07090e">
+  <meta name="theme-color" content="#050812">
   <meta property="og:title" content="Gerenciador PRO — Operational management for traders">
   <meta property="og:description" content="A guided system for planning, recovery, risk control and operational discipline. Spreadsheets record. Gerenciador PRO leads.">
   <meta property="og:type" content="website">
@@ -24,12 +24,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260819-5">
-  <link rel="stylesheet" href="styles-cadastro-etapas.css?v=20260804-2">
-  <link rel="stylesheet" href="styles-trader-product.css?v=20260821-2">
+  <link rel="stylesheet" href="styles.css?v=20260821-6">
   <script defer="" src="config.js?v=20260803-2"></script>
   <script defer="" src="script.js?v=20260819-1"></script>
   <script defer="" src="site.js?v=20260819-1"></script>
+  <script defer="" src="visual-system.js?v=20260821-1"></script>
   <script defer="" src="tema.js?v=20260816-1"></script>
   <script defer="" src="bandeiras.js?v=20260816-1"></script>
   <script defer="" src="i18n.js?v=20260816-1"></script>
@@ -64,8 +63,11 @@
     </a>
 
     <nav class="header-nav" aria-label="Main navigation" data-i18n-attr="aria-label:attr.02">
+      <a href="#simulacao" data-i18n="header.08">Simulation</a>
+      <a href="#prova" data-i18n="header.09">Proof</a>
       <a href="#diferenciais" data-i18n="header.04">Features</a>
       <a href="#comparativo" data-i18n="header.05">Comparison</a>
+      <a href="#fluxo" data-i18n="header.10">How it works</a>
       <a href="#inteligencia" data-i18n="header.06">Analytics</a>
       <a class="header-link" href="#cadastro" data-i18n="header.07">Join now</a>
     </nav>
@@ -101,8 +103,12 @@
        cobrir apenas a altura do header. -->
   <div class="mobile-menu" id="mobile-menu" aria-label="Navigation menu" hidden="" data-i18n-attr="aria-label:attr.04">
     <nav>
+      <a href="#inicio" data-i18n="mobile-menu.05">Home</a>
+      <a href="#simulacao" data-i18n="header.08">Simulation</a>
+      <a href="#prova" data-i18n="header.09">Proof</a>
       <a href="#diferenciais" data-i18n="mobile-menu.01">Features</a>
       <a href="#comparativo" data-i18n="mobile-menu.02">Comparison</a>
+      <a href="#fluxo" data-i18n="header.10">How it works</a>
       <a href="#inteligencia" data-i18n="mobile-menu.03">Analytics</a>
       <a href="#cadastro" data-i18n="mobile-menu.04">Join now</a>
     </nav>
@@ -198,7 +204,7 @@
       </aside>
     </section>
 
-    <section class="statement-section">
+    <section class="statement-section" id="visao">
       <div class="statement-label" data-i18n="statement.01">A CHANGE OF CATEGORY</div>
       <div class="statement-copy">
         <h2 data-i18n="statement.02">From a passive tool to <span>an operating system for the session.</span></h2>
@@ -625,7 +631,7 @@
       </div>
     </section>
 
-    <section class="operations-section">
+    <section class="operations-section" id="controle">
       <div class="operations-panel">
         <div class="operations-copy">
           <span class="eyebrow" data-i18n="operations.01"><i></i> During the session</span>
@@ -657,7 +663,7 @@
       </div>
     </section>
 
-    <section class="cta-strip">
+    <section class="cta-strip" id="convite">
       <div class="cta-strip-copy">
         <strong data-i18n="section.01">Still deciding?</strong>
         <span data-i18n="section.02">Free registration, no charge at this stage — it takes under 2 minutes.</span>
@@ -746,7 +752,7 @@
       </div>
     </section>
 
-    <section class="separation-section">
+    <section class="separation-section" id="modos">
       <div class="separation-copy">
         <span class="eyebrow" data-i18n="separation.01"><i></i> Data that never contaminates</span>
         <h2 data-i18n="separation.02">Test all you want without touching the official history.</h2>
@@ -770,7 +776,7 @@
       </div>
     </section>
 
-    <section class="global-section">
+    <section class="global-section" id="global">
       <div class="global-panel">
         <div>
           <span class="eyebrow light" data-i18n="global.01"><i></i> Built to grow</span>
@@ -786,7 +792,7 @@
       </div>
     </section>
 
-    <section class="boundaries-section">
+    <section class="boundaries-section" id="limites">
       <div class="boundaries-copy">
         <span class="eyebrow" data-i18n="boundaries.01"><i></i> Transparency is part of the product</span>
         <h2 data-i18n="boundaries.02">Organisational technology, not a financial promise.</h2>
@@ -813,7 +819,7 @@
       </div>
     </section>
 
-    <section class="compat-section">
+    <section class="compat-section" id="compatibilidade">
       <div class="section-heading">
         <span class="eyebrow" data-i18n="compat.01"><i></i> Works with any broker</span>
         <h2 data-i18n="compat.02">We don't ask for your broker login. We don't want it.</h2>
