@@ -33,6 +33,11 @@ jobs:
           test -f styles.css
           test -f config.js
           test -f privacidade.html
+          test -f src/worker.js
+          test -f src/worker-entry.js
+          test -f src/lots.js
+          test -f scripts/reconcile-sheets.mjs
+          test -f scripts/pull-sheet-retry-queue.mjs
 
       - name: Validar JSON dos idiomas
         shell: bash
@@ -69,15 +74,18 @@ jobs:
           console.log('OK: referências locais encontradas');
           NODE
 
-      - name: Verificar JavaScript principal
+      - name: Verificar JavaScript do site e infraestrutura
         shell: bash
         run: |
           set -euo pipefail
-          for file in script.js site.js i18n.js tema.js bandeiras.js paises.js telefone.js visual-system.js hero-digitacao.js; do
+          for file in script.js site.js i18n.js tema.js bandeiras.js paises.js telefone.js visual-system.js hero-digitacao.js src/worker.js src/worker-entry.js src/lots.js scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs; do
             if [ -f "$file" ]; then
               node --check "$file"
             fi
           done
+          cp scripts/apps-script/Code.secure.gs /tmp/apps-script-secure.js
+          node --check /tmp/apps-script-secure.js
+          echo 'OK: JavaScript do site e infraestrutura válido'
 
       - name: Bloquear segredos óbvios no código
         shell: bash
