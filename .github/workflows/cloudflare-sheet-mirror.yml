@@ -16,6 +16,10 @@ on:
       - "wrangler.jsonc"
   workflow_dispatch:
 
+concurrency:
+  group: gp-shared-sheets-test-contact
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -54,20 +58,10 @@ jobs:
           submission_id="sheet-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           payload=$(jq -n \
             --arg submission_id "$submission_id" \
-            '{
-              submission_id:$submission_id,
-              tipo_interesse:"comprar",
-              nome:"TESTE CHATGPT — PODE APAGAR",
-              whatsapp:"+5521900000000",
-              email:"teste.gerenciador.pro.20260819@example.com",
-              pais:"Brazil",
-              consentimento:"Sim",
-              origem:"ci-sheet-mirror"
-            }')
+            '{submission_id:$submission_id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:"Brazil",consentimento:"Sim",origem:"ci-sheet-mirror"}')
           response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
             -H "Content-Type: application/json" --data "$payload")
-          jq -e --arg id "$submission_id" \
-            '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
+          jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
           echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
           echo "PASS: D1 confirmou cadastro"
 
@@ -79,8 +73,7 @@ jobs:
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           for attempt in $(seq 1 20); do
-            payload=$(jq -n --arg id "$SUBMISSION_ID" \
-              '{sql:"SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
+            payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
             response=$(curl --fail-with-body -sS -X POST "$api" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               -H "Content-Type: application/json" --data "$payload")
@@ -108,8 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
-          payload=$(jq -n --arg id "$SUBMISSION_ID" \
-            '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$id]}')
+          payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$id]}')
           response=$(curl --fail-with-body -sS -X POST "$api" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" --data "$payload")
