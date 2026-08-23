@@ -1,3 +1,4 @@
+// QA proof trigger: post-Apps-Script authorization
 const required = [
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_ACCOUNT_ID",
