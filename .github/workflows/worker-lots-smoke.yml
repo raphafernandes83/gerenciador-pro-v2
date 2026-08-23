@@ -15,6 +15,10 @@ on:
       - ".github/workflows/worker-lots-smoke.yml"
   workflow_dispatch:
 
+concurrency:
+  group: gp-shared-sheets-test-contact
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
