@@ -28,6 +28,21 @@ jobs:
       QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
     steps:
+      - name: Limpar residuo do teste anterior
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          stale="queue-smoke-32618851751-1"
+          for sql in \
+            "DELETE FROM system_events WHERE submission_id = ?" \
+            "DELETE FROM leads WHERE submission_id = ?"; do
+            payload=$(jq -n --arg id "$stale" --arg sql "$sql" '{sql:$sql,params:[$id]}')
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$payload" >/dev/null
+          done
+          echo "PASS: residuo D1 anterior limpo"
+
       - name: Aguardar preview com Queue binding
         shell: bash
         run: |
@@ -55,16 +70,7 @@ jobs:
           payload=$(jq -n \
             --arg submission_id "$submission_id" \
             --arg whatsapp "$phone" \
-            '{
-              submission_id:$submission_id,
-              tipo_interesse:"comprar",
-              nome:"QUEUE SMOKE TEST",
-              whatsapp:$whatsapp,
-              email:"",
-              pais:"Brazil",
-              consentimento:"Sim",
-              origem:"ci-queue-smoke"
-            }')
+            '{submission_id:$submission_id,tipo_interesse:"comprar",nome:"QUEUE SMOKE TEST",whatsapp:$whatsapp,email:"",pais:"Brazil",consentimento:"Sim",origem:"ci-queue-smoke"}')
           response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
             -H "Content-Type: application/json" --data "$payload")
           jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
@@ -94,22 +100,25 @@ jobs:
           done
           exit 1
 
-      - name: Confirmar backlog da Queue
+      - name: Confirmar mensagem real na Queue por Peek
         shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
         run: |
           set -euo pipefail
-          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${QUEUE_ID}/metrics"
-          for attempt in $(seq 1 20); do
-            response=$(curl --fail-with-body -sS "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-            backlog=$(jq -r '.result.backlog_count // 0' <<<"$response")
-            echo "backlog=${backlog}"
-            if [ "$backlog" -ge 1 ]; then
-              echo "PASS: mensagem armazenada na Queue"
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+          echo "Aguardando delivery delay de 60s..."
+          sleep 65
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${QUEUE_ID}/messages/peek"
+          response=$(curl --fail-with-body -sS -X POST "$url" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"batch_size":10}')
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          count=$(jq -r '.result.messages | length' <<<"$response")
+          test "$count" -ge 1
+          body=$(jq -r '.result.messages[0].body // empty' <<<"$response")
+          echo "$body" | grep -F "$SUBMISSION_ID" >/dev/null
+          echo "PASS: mensagem real encontrada na Queue"
 
       - name: Purge da Queue de teste
         if: always()
@@ -133,8 +142,11 @@ jobs:
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          sql="DELETE FROM system_events WHERE submission_id = ?; DELETE FROM leads WHERE submission_id = ?;"
-          payload=$(jq -n --arg id "$SUBMISSION_ID" --arg sql "$sql" '{sql:$sql,params:[$id,$id]}')
-          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$payload")
-          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          for sql in \
+            "DELETE FROM system_events WHERE submission_id = ?" \
+            "DELETE FROM leads WHERE submission_id = ?"; do
+            payload=$(jq -n --arg id "$SUBMISSION_ID" --arg sql "$sql" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$payload")
+            test "$(jq -r '.success // false' <<<"$response")" = "true"
+          done
           echo "PASS: D1 de teste limpo"
