@@ -46,6 +46,15 @@ async function query(sql, params = []) {
   return body.result?.[0]?.results || [];
 }
 
+async function execute(sql, params = []) {
+  const body = await cloudflare(d1Api, {
+    method: "POST",
+    body: JSON.stringify({ sql, params })
+  });
+  const result = body.result?.[0] || {};
+  return Number(result?.meta?.changes ?? result?.changes ?? 0);
+}
+
 function clean(value, max = 5000) {
   if (value === null || value === undefined) return "";
   return String(value).trim().slice(0, max);
@@ -87,7 +96,7 @@ function buildSheetPayload(row) {
 
 async function recordEvent(type, submissionId, details = {}) {
   await query(
-    "INSERT INTO system_events (event_type,submission_id,details_json) VALUES (?,?,?)",
+    "INSERT INTO system_events (event_type,submission_id,details_json) VALUES (?,?,?) RETURNING id",
     [type, submissionId || null, JSON.stringify(details)]
   );
 }
@@ -143,6 +152,7 @@ const retries = [];
 let synced = 0;
 let ignored = 0;
 let retryCount = 0;
+let raceResolved = 0;
 
 for (const message of messages) {
   const leaseId = clean(message.lease_id, 4096);
@@ -175,33 +185,67 @@ for (const message of messages) {
     }
 
     const result = await mirror(lead);
-    await query(
+    const changed = await execute(
       `UPDATE leads
        SET sheet_sync_status='synced',
            sheet_sync_attempts=sheet_sync_attempts+1,
            sheet_synced_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
            updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-       WHERE submission_id=?`,
+       WHERE submission_id=?
+         AND COALESCE(sheet_sync_status,'pending') <> 'synced'`,
       [submissionId]
     );
-    await recordEvent("sheet_pull_synced", submissionId, {
-      attempts: Number(message.attempts || 0),
-      duplicate: Boolean(result?.duplicate)
-    });
+
+    if (changed > 0) {
+      await recordEvent("sheet_pull_synced", submissionId, {
+        attempts: Number(message.attempts || 0),
+        duplicate: Boolean(result?.duplicate)
+      });
+      synced += 1;
+    } else {
+      await recordEvent("sheet_pull_race_resolved_synced", submissionId, {
+        attempts: Number(message.attempts || 0)
+      });
+      raceResolved += 1;
+    }
+
     acks.push({ lease_id: leaseId });
-    synced += 1;
   } catch (error) {
     const reason = clean(error?.message || error, 300) || "sheet_pull_failed";
+
     if (submissionId) {
       try {
-        await query(
+        const fresh = await loadLead(submissionId);
+        if (!fresh || fresh.sheet_sync_status === "synced") {
+          await recordEvent("sheet_pull_race_resolved_synced", submissionId, {
+            attempts: Number(message.attempts || 0),
+            reason
+          });
+          acks.push({ lease_id: leaseId });
+          raceResolved += 1;
+          continue;
+        }
+
+        const changed = await execute(
           `UPDATE leads
            SET sheet_sync_status='retry',
                sheet_sync_attempts=sheet_sync_attempts+1,
                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-           WHERE submission_id=?`,
+           WHERE submission_id=?
+             AND COALESCE(sheet_sync_status,'pending') <> 'synced'`,
           [submissionId]
         );
+
+        if (changed === 0) {
+          await recordEvent("sheet_pull_race_resolved_synced", submissionId, {
+            attempts: Number(message.attempts || 0),
+            reason
+          });
+          acks.push({ lease_id: leaseId });
+          raceResolved += 1;
+          continue;
+        }
+
         await recordEvent("sheet_pull_retry", submissionId, {
           attempts: Number(message.attempts || 0),
           reason
@@ -230,5 +274,6 @@ console.log(JSON.stringify({
   synced,
   ignored,
   retried: retryCount,
+  raceResolved,
   backlog: Number(pulled.result?.message_backlog_count || 0)
 }));
