@@ -87,7 +87,7 @@ changed |= patch(
     '''async function mirror(row) {\n  if (!/^[a-f0-9]{64}$/.test(clean(row.mirror_auth_token, 128))) {\n    throw new Error("mirror_auth_token_missing");\n  }\n  const controller = new AbortController();''',
 )
 
-# Reconciliador.
+# Reconciliador. O SELECT é preparado por fix-reconcile-mirror-token.py.
 changed |= patch(
     "scripts/reconcile-sheets.mjs",
     '''  return {\n    ...original,\n    submission_id: row.submission_id,''',
@@ -97,11 +97,6 @@ changed |= patch(
     "scripts/reconcile-sheets.mjs",
     '''async function mirror(row) {\n  const controller = new AbortController();''',
     '''async function mirror(row) {\n  if (!/^[a-f0-9]{64}$/.test(String(row.mirror_auth_token || "").trim())) {\n    throw new Error("mirror_auth_token_missing");\n  }\n  const controller = new AbortController();''',
-)
-changed |= patch(
-    "scripts/reconcile-sheets.mjs",
-    '''          enviado_em_local,payload_json,sheet_sync_attempts\n   FROM leads''',
-    '''          enviado_em_local,payload_json,sheet_sync_attempts,mirror_auth_token\n   FROM leads''',
 )
 
 # Apps Script seguro v3.
