@@ -1,6 +1,12 @@
 name: Cloudflare D1 foundation
 
 on:
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-d1-foundation.yml"
+      - "migrations/**"
   pull_request:
     branches: ["main"]
     paths:
