@@ -1,4 +1,5 @@
 name: Apps Script secure source check
+# trigger: complete mirror auth token
 
 on:
   pull_request:
