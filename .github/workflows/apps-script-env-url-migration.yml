@@ -1,93 +1,14 @@
-name: Apps Script environment URL migration
+name: Apps Script environment URL migration (archived)
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/apps-script-env-url-migration.yml"
-      - "scripts/apps-script/Code.secure.gs"
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: apps-script-environment-url-migration
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  migrate:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  archived:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-
-      - name: Remover URL fixa e exigir Script Properties
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          p = Path('scripts/apps-script/Code.secure.gs')
-          text = p.read_text()
-
-          old = '  MIRROR_AUTH_URL: "https://gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize",'
-          new = '  MIRROR_AUTH_PROPERTY_KEY: "GP_MIRROR_AUTH_URL",'
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('config anchor missing')
-
-          old_get = '''function doGet(e) {\n  return jsonOutput_({\n    ok: true,\n    service: CONFIG.SERVICE_NAME,\n    version: CONFIG.VERSION,\n    status: "ready",\n    timestamp: new Date().toISOString()\n  });\n}\n'''
-          new_get = '''function doGet(e) {\n  const properties = PropertiesService.getScriptProperties();\n  const spreadsheetConfigured = Boolean(plainText_(properties.getProperty(CONFIG.PROPERTY_KEY), 200));\n  let mirrorAuthConfigured = true;\n\n  try {\n    getMirrorAuthUrl_();\n  } catch (error) {\n    mirrorAuthConfigured = false;\n  }\n\n  const ready = spreadsheetConfigured && mirrorAuthConfigured;\n\n  return jsonOutput_({\n    ok: ready,\n    service: CONFIG.SERVICE_NAME,\n    version: CONFIG.VERSION,\n    status: ready ? "ready" : "not_ready",\n    timestamp: new Date().toISOString()\n  });\n}\n'''
-          if old_get in text:
-              text = text.replace(old_get, new_get, 1)
-          elif new_get not in text:
-              raise SystemExit('doGet anchor missing')
-
-          marker = '''function authorizeMirrorPayload_(payload) {\n'''
-          helper = '''function getMirrorAuthUrl_() {\n  const value = PropertiesService\n    .getScriptProperties()\n    .getProperty(CONFIG.MIRROR_AUTH_PROPERTY_KEY);\n  const url = plainText_(value, 2000);\n\n  if (!/^https:\\/\\/[^\\s]+\\/api\\/mirror\\/authorize$/.test(url)) {\n    throw new Error("MIRROR_AUTH_NOT_CONFIGURED");\n  }\n\n  return url;\n}\n\nfunction authorizeMirrorPayload_(payload) {\n'''
-          if 'function getMirrorAuthUrl_() {' not in text:
-              if marker not in text:
-                  raise SystemExit('authorize anchor missing')
-              text = text.replace(marker, helper, 1)
-
-          old_fetch = '''  const authPayload = buildAuthorizationPayload_(payload);\n  let response;\n\n  try {\n    response = UrlFetchApp.fetch(CONFIG.MIRROR_AUTH_URL, {'''
-          new_fetch = '''  const authPayload = buildAuthorizationPayload_(payload);\n  const mirrorAuthUrl = getMirrorAuthUrl_();\n  let response;\n\n  try {\n    response = UrlFetchApp.fetch(mirrorAuthUrl, {'''
-          if old_fetch in text:
-              text = text.replace(old_fetch, new_fetch, 1)
-          elif new_fetch not in text:
-              raise SystemExit('fetch anchor missing')
-
-          if 'animaisfofinhos1983.workers.dev/api/mirror/authorize' in text:
-              raise SystemExit('hardcoded mirror URL still present')
-
-          p.write_text(text)
-          PY
-
-      - name: Validar sintaxe e contrato
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp scripts/apps-script/Code.secure.gs /tmp/apps-script.js
-          node --check /tmp/apps-script.js
-          grep -F 'MIRROR_AUTH_PROPERTY_KEY: "GP_MIRROR_AUTH_URL"' scripts/apps-script/Code.secure.gs >/dev/null
-          grep -F 'function getMirrorAuthUrl_()' scripts/apps-script/Code.secure.gs >/dev/null
-          grep -F 'status: ready ? "ready" : "not_ready"' scripts/apps-script/Code.secure.gs >/dev/null
-          ! grep -F 'animaisfofinhos1983.workers.dev/api/mirror/authorize' scripts/apps-script/Code.secure.gs >/dev/null
-
-      - name: Commitar código se necessário
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- scripts/apps-script/Code.secure.gs; then
-            echo 'PASS: migração já aplicada'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/apps-script/Code.secure.gs
-          git commit -m 'security: parametrizar URL de autorização do Apps Script'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Estado
+        run: echo 'Migração concluída; workflow arquivado sem permissão de escrita.'
