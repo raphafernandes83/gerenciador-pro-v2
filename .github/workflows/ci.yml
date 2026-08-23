@@ -1,0 +1,90 @@
+name: Validar site
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches:
+      - "infra/**"
+      - "feat/**"
+      - "fix/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verificar arquivos essenciais
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f index.html
+          test -f script.js
+          test -f styles.css
+          test -f config.js
+          test -f privacidade.html
+
+      - name: Validar JSON dos idiomas
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const dir = 'i18n';
+          const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+          if (!files.length) throw new Error('Nenhum arquivo de idioma encontrado');
+          for (const file of files) {
+            JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+          }
+          console.log(`OK: ${files.length} arquivos JSON válidos`);
+          NODE
+
+      - name: Verificar referências locais do HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const refs = [...html.matchAll(/(?:src|href)=["']([^"'#?]+)(?:\?[^"']*)?["']/g)]
+            .map(m => m[1])
+            .filter(p => !/^(?:https?:|mailto:|tel:|data:)/i.test(p));
+          const missing = [...new Set(refs)].filter(p => !fs.existsSync(p));
+          if (missing.length) {
+            console.error('Referências locais ausentes:');
+            missing.forEach(p => console.error(`- ${p}`));
+            process.exit(1);
+          }
+          console.log('OK: referências locais encontradas');
+          NODE
+
+      - name: Verificar JavaScript principal
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in script.js site.js i18n.js tema.js bandeiras.js paises.js telefone.js visual-system.js hero-digitacao.js; do
+            if [ -f "$file" ]; then
+              node --check "$file"
+            fi
+          done
+
+      - name: Bloquear segredos óbvios no código
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE --exclude-dir=.git --exclude='*.min.js' '(sk_live_[A-Za-z0-9]+|sk_test_[A-Za-z0-9]+|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)' .; then
+            echo 'Possível segredo encontrado no repositório.' >&2
+            exit 1
+          fi
+          echo 'OK: nenhum segredo óbvio detectado'
