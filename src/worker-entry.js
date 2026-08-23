@@ -8,12 +8,30 @@ const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/sit
 const MAX_REGISTRATION_BYTES = 64 * 1024;
 const MAX_MIRROR_AUTH_BYTES = 64 * 1024;
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' https://challenges.cloudflare.com",
+  "style-src 'self' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: https:",
+  "connect-src 'self' https://challenges.cloudflare.com",
+  "frame-src https://challenges.cloudflare.com",
+  "manifest-src 'self'",
+  "upgrade-insecure-requests"
+].join("; ");
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer"
     }
   });
 }
@@ -140,6 +158,36 @@ function registrationRequestTooLarge(request) {
   return requestTooLarge(request, MAX_REGISTRATION_BYTES);
 }
 
+function registrationOriginAllowed(request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+
+  try {
+    return new URL(origin).origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}
+
+function withSecurityHeaders(response, request) {
+  const headers = new Headers(response.headers);
+  headers.set("content-security-policy", CONTENT_SECURITY_POLICY);
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-frame-options", "DENY");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+
+  if (new URL(request.url).protocol === "https:") {
+    headers.set("strict-transport-security", "max-age=31536000");
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 function mirrorValue(value, max = 5000) {
   return clean(value, max);
 }
@@ -181,7 +229,7 @@ function expectedMirrorPayload(lead) {
 
 function mirrorPayloadMatches(expected, supplied) {
   const keys = Object.keys(expected);
-  return keys.every((key) => mirrorValue(supplied?.[key], key === "observacao" ? 5000 : 5000) === expected[key]);
+  return keys.every((key) => mirrorValue(supplied?.[key], 5000) === expected[key]);
 }
 
 async function authorizeMirrorWrite(request, env) {
@@ -250,6 +298,10 @@ export default {
     }
 
     if (url.pathname === "/api/register" && request.method === "POST") {
+      if (!registrationOriginAllowed(request)) {
+        return json({ ok: false, error: "origin_not_allowed" }, 403);
+      }
+
       if (registrationRequestTooLarge(request)) {
         return json({ ok: false, error: "payload_too_large" }, 413);
       }
@@ -294,7 +346,8 @@ export default {
       }
     }
 
-    return baseWorker.fetch(request, env, ctx);
+    const response = await baseWorker.fetch(request, env, ctx);
+    return withSecurityHeaders(response, request);
   },
 
   async queue(batch, env, ctx) {
