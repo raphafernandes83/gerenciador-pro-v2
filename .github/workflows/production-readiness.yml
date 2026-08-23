@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
           secure=false
           response=$(curl -sS --max-time 15 "$SHEETS_MIRROR_URL" || true)
-          if jq -e '.ok == true and .version == "2026-08-23.2" and .status == "ready"' <<<"$response" >/dev/null 2>&1 \
+          if jq -e '.ok == true and .version == "2026-08-23.3" and .status == "ready"' <<<"$response" >/dev/null 2>&1 \
             && ! jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' <<<"$response" >/dev/null 2>&1; then
             secure=true
           fi
