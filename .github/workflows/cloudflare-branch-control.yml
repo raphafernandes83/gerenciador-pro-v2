@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: write
   statuses: write
 
 jobs:
@@ -97,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ steps.change.outcome }}" = "success" ]; then
-            body="### Cloudflare branch control\n\n✅ Production branch alterada de \`main\` para \`production\`.\n✅ Preview continua habilitado para branches nao-prod.\n✅ Verificacao pos-alteracao passou.\n\nNenhum codigo foi publicado por esta operacao."
+            body="### Cloudflare branch control\n\n✅ Production branch = \`production\`.\n✅ Preview habilitado para branches nao-prod.\n✅ Verificacao pos-alteracao passou.\n\nNenhum codigo foi publicado por esta operacao."
           else
             body="### Cloudflare branch control\n\n❌ Alteracao nao concluida. O workflow executou rollback quando necessario."
           fi
