@@ -26,6 +26,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      DLQ_QUEUE_NAME: gerenciador-pro-sheet-retry-dlq
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
       SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
     steps:
@@ -81,21 +83,48 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
-          test_expr="origem IN ('rate-limit-smoke','load-drill','ci-lot-concurrency','worker-lot-smoke','monotonicity-smoke') OR submission_id LIKE 'qa-%' OR submission_id LIKE 'rate-smoke-%' OR submission_id LIKE 'load-%' OR submission_id LIKE 'mono-%'"
-          sql="SELECT COUNT(*) AS total, SUM(CASE WHEN sheet_sync_status='retry' THEN 1 ELSE 0 END) AS retry, SUM(CASE WHEN sheet_sync_status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN (${test_expr}) THEN 1 ELSE 0 END) AS qa_active, SUM(CASE WHEN (${test_expr}) AND datetime(created_at) < datetime('now','-10 minutes') THEN 1 ELSE 0 END) AS qa_stale FROM leads"
+          test_expr="origem IN ('rate-limit-smoke','rate-limit-drill','load-drill','ci-lot-concurrency','worker-lot-smoke','monotonicity-smoke','reconcile-smoke','ci-queue-retry','ci-sheet-mirror') OR submission_id LIKE 'qa-%' OR submission_id LIKE 'rate-%' OR submission_id LIKE 'load-%' OR submission_id LIKE 'mono-%' OR submission_id LIKE 'reconcile-smoke-%' OR submission_id LIKE 'sheet-smoke-%'"
+          sql="SELECT COUNT(*) AS total, SUM(CASE WHEN sheet_sync_status='pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN sheet_sync_status='retry' THEN 1 ELSE 0 END) AS retry, SUM(CASE WHEN sheet_sync_status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN (${test_expr}) THEN 1 ELSE 0 END) AS qa_active, SUM(CASE WHEN (${test_expr}) AND datetime(created_at) < datetime('now','-10 minutes') THEN 1 ELSE 0 END) AS qa_stale FROM leads"
           body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
           response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
           row=$(jq -c '.result[0].results[0]' <<<"$response")
+          pending=$(jq -r '.pending // 0' <<<"$row")
           retry=$(jq -r '.retry // 0' <<<"$row")
           failed=$(jq -r '.failed // 0' <<<"$row")
           qa_active=$(jq -r '.qa_active // 0' <<<"$row")
           qa_stale=$(jq -r '.qa_stale // 0' <<<"$row")
           test "$failed" -eq 0
           test "$qa_stale" -eq 0
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
           echo "retry=$retry" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
           echo "qa_active=$qa_active" >> "$GITHUB_OUTPUT"
           echo "qa_stale=$qa_stale" >> "$GITHUB_OUTPUT"
           echo "PASS: sem failed e sem resíduos QA >10min; QA ativo=${qa_active}"
+
+      - name: Validar Retry Queue e DLQ
+        id: queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          retry_metrics=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/metrics" -H "$auth")
+          retry_backlog=$(jq -r '.result.backlog_count // 0' <<<"$retry_metrics")
+          consumers=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/consumers" -H "$auth")
+          consumer_count=$(jq -r '.result | length' <<<"$consumers")
+          consumer_type=$(jq -r '.result[0].type // "none"' <<<"$consumers")
+          queues=$(curl --fail-with-body -sS "$base" -H "$auth")
+          dlq_id=$(jq -r --arg name "$DLQ_QUEUE_NAME" '.result[] | select(.queue_name == $name) | .queue_id' <<<"$queues" | head -n1)
+          test -n "$dlq_id"
+          dlq_metrics=$(curl --fail-with-body -sS "${base}/${dlq_id}/metrics" -H "$auth")
+          dlq_backlog=$(jq -r '.result.backlog_count // 0' <<<"$dlq_metrics")
+          test "$consumer_count" -eq 1
+          test "$consumer_type" = 'http_pull'
+          echo "retry_backlog=$retry_backlog" >> "$GITHUB_OUTPUT"
+          echo "dlq_backlog=$dlq_backlog" >> "$GITHUB_OUTPUT"
+          echo "consumer=${consumer_count}/${consumer_type}" >> "$GITHUB_OUTPUT"
+          echo "Queue backlog=${retry_backlog}; DLQ=${dlq_backlog}; consumer=${consumer_count}/${consumer_type}"
 
       - name: Verificar publicação do Apps Script seguro
         id: apps
@@ -109,7 +138,6 @@ jobs:
             secure=true
           fi
           echo "secure=$secure" >> "$GITHUB_OUTPUT"
-          echo "Apps Script seguro publicado=${secure}"
 
       - name: Verificar proteção de branches
         id: branches
@@ -120,7 +148,6 @@ jobs:
           production=$(gh api "repos/${GITHUB_REPOSITORY}/branches/production" --jq '.protected')
           echo "main=$main" >> "$GITHUB_OUTPUT"
           echo "production=$production" >> "$GITHUB_OUTPUT"
-          echo "main protected=${main}; production protected=${production}"
 
       - name: Verificar domínio final e Turnstile real quando informado
         id: prod
@@ -139,7 +166,6 @@ jobs:
             fi
           fi
           echo "ready=$ready" >> "$GITHUB_OUTPUT"
-          echo "domínio + Turnstile real=${ready}"
 
       - name: GO NO-GO
         shell: bash
@@ -148,25 +174,32 @@ jobs:
           MAIN_PROTECTED: ${{ steps.branches.outputs.main }}
           PROD_PROTECTED: ${{ steps.branches.outputs.production }}
           PROD_READY: ${{ steps.prod.outputs.ready }}
+          PENDING: ${{ steps.d1.outputs.pending }}
           RETRY: ${{ steps.d1.outputs.retry }}
+          FAILED: ${{ steps.d1.outputs.failed }}
           QA_ACTIVE: ${{ steps.d1.outputs.qa_active }}
+          QUEUE_BACKLOG: ${{ steps.queue.outputs.retry_backlog }}
+          DLQ_BACKLOG: ${{ steps.queue.outputs.dlq_backlog }}
         run: |
           set -euo pipefail
+          data_clean=false
+          if [ "$PENDING" -eq 0 ] && [ "$RETRY" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$QA_ACTIVE" -eq 0 ] && [ "$QUEUE_BACKLOG" -eq 0 ] && [ "$DLQ_BACKLOG" -eq 0 ]; then data_clean=true; fi
           manual_ready=false
-          if [ "$APPS" = true ] && [ "$MAIN_PROTECTED" = true ] && [ "$PROD_PROTECTED" = true ] && [ "$PROD_READY" = true ]; then manual_ready=true; fi
+          if [ "$APPS" = true ] && [ "$MAIN_PROTECTED" = true ] && [ "$PROD_PROTECTED" = true ] && [ "$PROD_READY" = true ] && [ "$data_clean" = true ]; then manual_ready=true; fi
           {
             echo '## Production readiness — Gerenciador PRO'
             echo ''
             echo '| Gate | Estado |'
             echo '|---|---|'
             echo '| Infra/preview automático | ✅ PASS |'
-            echo "| D1 retries atuais | ${RETRY} |"
-            echo "| QA sintético ativo (<10min) | ${QA_ACTIVE} |"
+            echo "| D1 pending / retry / failed | ${PENDING} / ${RETRY} / ${FAILED} |"
+            echo "| QA ativo (<10min) | ${QA_ACTIVE} |"
+            echo "| Retry Queue / DLQ | ${QUEUE_BACKLOG} / ${DLQ_BACKLOG} |"
             if [ "$APPS" = true ]; then echo '| Apps Script seguro publicado | ✅ |'; else echo '| Apps Script seguro publicado | ⏳ |'; fi
             if [ "$MAIN_PROTECTED" = true ]; then echo '| main protegida | ✅ |'; else echo '| main protegida | ⏳ |'; fi
             if [ "$PROD_PROTECTED" = true ]; then echo '| production protegida | ✅ |'; else echo '| production protegida | ⏳ |'; fi
             if [ "$PROD_READY" = true ]; then echo '| Domínio + Turnstile real | ✅ |'; else echo '| Domínio + Turnstile real | ⏳ |'; fi
             echo ''
-            if [ "$manual_ready" = true ]; then echo '**GO técnico — pronto para workflow de promoção.**'; else echo '**NO-GO controlado — infraestrutura automática pronta; gates manuais ainda pendentes.**'; fi
+            if [ "$manual_ready" = true ]; then echo '**GO técnico — pronto para workflow de promoção.**'; else echo '**NO-GO controlado — infraestrutura automática pronta; gates finais ainda pendentes.**'; fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "manual_ready=${manual_ready}"
