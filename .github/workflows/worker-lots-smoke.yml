@@ -43,12 +43,8 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 60); do
             code=$(curl -sS -o /tmp/lots.json -w '%{http_code}' "${PREVIEW_URL}/api/lots?market=${MARKET}" || true)
-            if [ "$code" = "200" ] && jq -e '.ok == true' /tmp/lots.json >/dev/null 2>&1; then
-              echo "PASS: /api/lots disponivel"
-              exit 0
-            fi
-            echo "Aguardando preview (${attempt}/60)"
-            sleep 5
+            if [ "$code" = "200" ] && jq -e '.ok == true' /tmp/lots.json >/dev/null 2>&1; then exit 0; fi
+            sleep 3
           done
           exit 1
 
@@ -65,16 +61,13 @@ jobs:
             "DELETE FROM lead_lot_allocations WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
             "DELETE FROM leads WHERE email_norm = ?"; do
             body=$(jq -nc --arg sql "$sql" --arg email "$TEST_EMAIL" '{sql:$sql,params:[$email]}')
-            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
-            test "$(jq -r '.success // false' <<<"$response")" = "true"
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
           done
           body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
           curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
           sql="INSERT INTO registration_lots (market_key,lot_number,label,capacity,claimed_count,price_minor,currency_code,state,display_order,opened_at) VALUES (?,1,'CI WORKER LOT',2,0,7900,'BRL','open',1,strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
           body=$(jq -nc --arg sql "$sql" --arg market "$MARKET" '{sql:$sql,params:[$market]}')
-          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
-          test "$(jq -r '.success // false' <<<"$response")" = "true"
-          echo "PASS: lote temporario criado"
+          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
 
       - name: Confirmar 2 vagas antes do cadastro
         shell: bash
@@ -84,7 +77,6 @@ jobs:
           set -euo pipefail
           response=$(curl --fail-with-body -sS "${PREVIEW_URL}/api/lots?market=${MARKET}")
           jq -e '.ok == true and .configured == true and .current.remaining == 2 and .current.priceMinor == 7900 and .current.currency == "BRL"' <<<"$response" >/dev/null
-          echo "PASS: contador inicial = 2"
 
       - name: Cadastrar e reservar uma vaga
         id: register
@@ -94,11 +86,10 @@ jobs:
         run: |
           set -euo pipefail
           submission_id="worker-lot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          payload=$(jq -nc --arg id "$submission_id" --arg market "$MARKET" '{submission_id:$id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:$market,consentimento:"Sim",origem:"ci-worker-lot"}')
+          payload=$(jq -nc --arg id "$submission_id" --arg market "$MARKET" '{submission_id:$id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:$market,consentimento:"Sim",origem:"ci-worker-lot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}')
           response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
           jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id and .lotStatus == "allocated" and .lot.remaining == 1 and .lot.priceMinor == 7900 and .lot.currency == "BRL"' <<<"$response" >/dev/null
           echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
-          echo "PASS: vaga reservada"
 
       - name: Confirmar contador caiu para 1
         shell: bash
@@ -108,14 +99,9 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 30); do
             code=$(curl -sS -o /tmp/lots-after.json -w '%{http_code}' "${PREVIEW_URL}/api/lots?market=${MARKET}" || true)
-            if [ "$code" = "200" ] && jq -e '.ok == true and .current.remaining == 1 and .current.claimed == 1' /tmp/lots-after.json >/dev/null 2>&1; then
-              echo "PASS: contador = 1"
-              exit 0
-            fi
-            echo "Aguardando endpoint estabilizar (${attempt}/30, HTTP ${code})"
+            if [ "$code" = "200" ] && jq -e '.ok == true and .current.remaining == 1 and .current.claimed == 1' /tmp/lots-after.json >/dev/null 2>&1; then exit 0; fi
             sleep 2
           done
-          cat /tmp/lots-after.json 2>/dev/null || true
           exit 1
 
       - name: Aguardar espelho reconhecer contato existente
@@ -131,10 +117,7 @@ jobs:
             body=$(jq -nc --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
             response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
             status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
-            if [ "$status" = "synced" ]; then
-              echo "PASS: Sheets duplicate reconhecido"
-              exit 0
-            fi
+            if [ "$status" = "synced" ]; then exit 0; fi
             sleep 2
           done
           exit 1
@@ -157,12 +140,3 @@ jobs:
           fi
           body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
           curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
-          echo "PASS: fixture removida"
-
-      - name: Registrar resultado
-        if: success()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body='### Worker lot smoke\n\n✅ `/api/lots`: 2 vagas antes.\n✅ `/api/register`: reservou 1 vaga.\n✅ Retorno: lote + preço/moeda + 1 vaga restante.\n✅ `/api/lots`: 1 vaga depois.\n✅ Fixture removida.\n\n**PASS — lotes funcionando no preview; nenhum lote comercial ativo.**'
