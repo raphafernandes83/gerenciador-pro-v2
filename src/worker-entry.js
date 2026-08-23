@@ -77,14 +77,20 @@ async function validateTurnstile(request, env) {
       signal: controller.signal
     });
 
-    if (!response.ok) {
+    let result = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    if (response.status >= 500) {
       console.error("turnstile_siteverify_http", response.status);
       return { ok: false, error: "turnstile_unavailable", status: 503 };
     }
 
-    const result = await response.json();
-    if (result?.success !== true) {
-      console.warn("turnstile_rejected", result?.["error-codes"] || []);
+    if (!response.ok || result?.success !== true) {
+      console.warn("turnstile_rejected", response.status, result?.["error-codes"] || []);
       return { ok: false, error: "turnstile_invalid", status: 403 };
     }
 
