@@ -30,10 +30,14 @@ jobs:
           set -euo pipefail
           cp scripts/apps-script/Code.secure.gs /tmp/apps-script-secure.js
           node --check /tmp/apps-script-secure.js
-          jq -e '.runtimeVersion == "V8"' scripts/apps-script/appsscript.json >/dev/null
-          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/spreadsheets") != null' scripts/apps-script/appsscript.json >/dev/null
-          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null' scripts/apps-script/appsscript.json >/dev/null
-          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.scriptapp") != null' scripts/apps-script/appsscript.json >/dev/null
+          manifest=scripts/apps-script/appsscript.json
+          jq -e '.runtimeVersion == "V8"' "$manifest" >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/spreadsheets") != null' "$manifest" >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null' "$manifest" >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.scriptapp") != null' "$manifest" >/dev/null
+          jq -e '.urlFetchWhitelist | index("https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize") != null' "$manifest" >/dev/null
+          jq -e '.urlFetchWhitelist | index("https://gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize") != null' "$manifest" >/dev/null
+          test "$(jq -r '.urlFetchWhitelist | length' "$manifest")" -eq 2
 
       - name: Validar gates de seguranca
         shell: bash
@@ -53,4 +57,4 @@ jobs:
           ! grep -F 'HtmlService' "$file" >/dev/null
           ! grep -F 'spreadsheetUrl:' "$file" >/dev/null
           ! grep -F 'spreadsheetId:' "$file" >/dev/null
-          echo "PASS: Apps Script v3 exige capability token, URL por ambiente, OAuth explícito e não expõe dados internos"
+          echo "PASS: Apps Script v3 exige capability token, OAuth explícito, allowlist mínima e URL por ambiente"
