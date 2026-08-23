@@ -105,11 +105,107 @@ jobs:
           echo "PASS: leads + system_events"
 
       - name: Registrar D1 no PR
-        if: success()
+        if: success() && github.event_name == 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           DATABASE_ID: ${{ steps.db.outputs.database_id }}
         run: |
-          body=$(printf '### D1 criado e validado\n\n✅ `%s` pronto.\n✅ Tabelas `leads` e `system_events` prontas.\n✅ Database ID: `%s`.\n\nPróximo: vincular D1 ao Worker e testar `/api/register` no preview.' "$D1_NAME" "$DATABASE_ID")
+          body=$(printf '### D1 criado e validado\n\n✅ `%s` pronto.\n✅ Tabelas `leads` e `system_events` prontas.\n✅ Database ID: `%s`.\n\nPróximo: testar `/api/register` no preview.' "$D1_NAME" "$DATABASE_ID")
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
+
+  smoke:
+    if: github.event_name == 'pull_request'
+    needs: d1
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar preview com Worker e D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 36); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .database == "reachable"' /tmp/health.json >/dev/null 2>&1; then
+              echo "PASS: /api/health com D1 reachable"
+              exit 0
+            fi
+            echo "Preview ainda nao pronto (${attempt}/36, HTTP ${code})"
+            sleep 5
+          done
+          echo "Preview nao ficou pronto a tempo"
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Enviar cadastro sintetico
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          phone="+5500${GITHUB_RUN_ID}"
+          payload=$(jq -n \
+            --arg submission_id "$submission_id" \
+            --arg whatsapp "$phone" \
+            '{
+              submission_id: $submission_id,
+              tipo_interesse: "comprar",
+              nome: "Cloudflare Smoke Test",
+              whatsapp: $whatsapp,
+              pais: "Brasil",
+              consentimento: true,
+              origem: "ci-smoke-test"
+            }')
+          response=$(curl --fail-with-body -sS \
+            -X POST "${PREVIEW_URL}/api/register" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: /api/register confirmou gravacao"
+
+      - name: Confirmar registro diretamente no D1
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"SELECT submission_id FROM leads WHERE submission_id = ? LIMIT 1", params:[$id]}')
+          response=$(curl --fail-with-body -sS \
+            -X POST "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          jq -e --arg id "$SUBMISSION_ID" '.success == true and (.result[0].results | length) == 1 and .result[0].results[0].submission_id == $id' <<<"$response" >/dev/null
+          echo "PASS: cadastro confirmado diretamente no D1"
+
+      - name: Apagar cadastro sintetico
+        if: always() && steps.register.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"DELETE FROM leads WHERE submission_id = ?", params:[$id]}')
+          response=$(curl --fail-with-body -sS \
+            -X POST "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          jq -e '.success == true' <<<"$response" >/dev/null
+          echo "PASS: cadastro sintetico removido"
+
+      - name: Registrar smoke test no PR
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(printf '### Worker + D1 smoke test\n\n✅ `/api/health`: Worker e D1 acessíveis.\n✅ `/api/register`: cadastro sintético confirmado.\n✅ D1: registro confirmado por consulta direta.\n✅ Limpeza: cadastro sintético removido.\n\n**Resultado: PASS — Worker + D1 funcionando no preview.**')
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
