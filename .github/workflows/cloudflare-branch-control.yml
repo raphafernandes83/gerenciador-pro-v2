@@ -1,0 +1,104 @@
+name: Cloudflare branch control
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-branch-control.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  statuses: write
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      BOOTSTRAP_BUILD_UUID: 69fbbd6b-de5d-4e22-b0e5-168641be3394
+    steps:
+      - name: Trocar branch de producao com rollback
+        id: change
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          build=$(curl --fail-with-body -sS "${api}/builds/builds/${BOOTSTRAP_BUILD_UUID}" -H "$auth")
+          tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
+          test -n "$tag" || { echo "Nao foi possivel obter o Worker tag"; exit 1; }
+
+          before=$(curl --fail-with-body -sS "${api}/builds/workers/${tag}/triggers" -H "$auth")
+          prod_uuid=$(jq -r '.result[] | select(.deploy_command == "npx wrangler deploy") | .trigger_uuid' <<<"$before" | head -n1)
+          preview_uuid=$(jq -r '.result[] | select(.deploy_command == "npx wrangler versions upload") | .trigger_uuid' <<<"$before" | head -n1)
+          test -n "$prod_uuid" && test -n "$preview_uuid" || { echo "Triggers de producao/preview nao identificados"; exit 1; }
+
+          prod_orig=$(jq -c --arg u "$prod_uuid" '.result[] | select(.trigger_uuid == $u) | {branch_includes,branch_excludes}' <<<"$before")
+          preview_orig=$(jq -c --arg u "$preview_uuid" '.result[] | select(.trigger_uuid == $u) | {branch_includes,branch_excludes}' <<<"$before")
+
+          rollback() {
+            echo "Executando rollback dos branch controls..."
+            curl -sS -X PATCH "${api}/builds/triggers/${prod_uuid}" -H "$auth" -H "Content-Type: application/json" --data "$prod_orig" >/dev/null || true
+            curl -sS -X PATCH "${api}/builds/triggers/${preview_uuid}" -H "$auth" -H "Content-Type: application/json" --data "$preview_orig" >/dev/null || true
+          }
+
+          prod_payload='{"branch_includes":["production"],"branch_excludes":[]}'
+          preview_payload='{"branch_includes":["*"],"branch_excludes":["production"]}'
+
+          if ! curl --fail-with-body -sS -X PATCH "${api}/builds/triggers/${prod_uuid}" -H "$auth" -H "Content-Type: application/json" --data "$prod_payload" >/dev/null; then
+            echo "Falha ao atualizar trigger de producao"
+            exit 1
+          fi
+
+          if ! curl --fail-with-body -sS -X PATCH "${api}/builds/triggers/${preview_uuid}" -H "$auth" -H "Content-Type: application/json" --data "$preview_payload" >/dev/null; then
+            echo "Falha ao atualizar trigger de preview"
+            rollback
+            exit 1
+          fi
+
+          after=$(curl --fail-with-body -sS "${api}/builds/workers/${tag}/triggers" -H "$auth")
+          prod_ok=$(jq -r --arg u "$prod_uuid" '.result[] | select(.trigger_uuid == $u) | ((.branch_includes == ["production"]) and (.branch_excludes == []))' <<<"$after")
+          preview_ok=$(jq -r --arg u "$preview_uuid" '.result[] | select(.trigger_uuid == $u) | ((.branch_includes == ["*"]) and (.branch_excludes == ["production"]))' <<<"$after")
+
+          if [ "$prod_ok" != "true" ] || [ "$preview_ok" != "true" ]; then
+            echo "Verificacao final falhou"
+            rollback
+            exit 1
+          fi
+
+          echo "PASS: production branch = production"
+          echo "PASS: non-production excludes = production"
+
+      - name: Publicar status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.change.outcome }}" = "success" ]; then
+            state=success
+            description="Cloudflare production branch = production"
+          else
+            state=failure
+            description="Cloudflare branch change failed/rolled back"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" -f context="cloudflare/branch-control" -f description="$description"
+
+      - name: Registrar no PR
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.change.outcome }}" = "success" ]; then
+            body="### Cloudflare branch control\n\n✅ Production branch alterada de \`main\` para \`production\`.\n✅ Preview continua habilitado para branches nao-prod.\n✅ Verificacao pos-alteracao passou.\n\nNenhum codigo foi publicado por esta operacao."
+          else
+            body="### Cloudflare branch control\n\n❌ Alteracao nao concluida. O workflow executou rollback quando necessario."
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
