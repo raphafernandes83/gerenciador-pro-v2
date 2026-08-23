@@ -1,0 +1,98 @@
+name: Rate limit behavior smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/rate-limit-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: rate-limit-behavior-smoke
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Preparar lead sintético já sincronizado
+        id: seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          key="rate-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          suffix="${GITHUB_RUN_ID: -8}"
+          phone="5522${suffix}"
+          email="${key}@example.invalid"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'synced')"
+          body=$(jq -nc --arg sql "$sql" --arg key "$key" --arg phone "$phone" --arg email "$email" '{sql:$sql,params:[$key,"comprar","RATE LIMIT SMOKE",$phone,$phone,$email,$email,"Brazil",1,"rate-limit-smoke","{}"]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "phone=$phone" >> "$GITHUB_OUTPUT"
+          echo "email=$email" >> "$GITHUB_OUTPUT"
+
+      - name: Provar bloqueio eventual do rate limiter por contato
+        shell: bash
+        env:
+          KEY: ${{ steps.seed.outputs.key }}
+          PHONE: ${{ steps.seed.outputs.phone }}
+          EMAIL: ${{ steps.seed.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg key "$KEY" --arg phone "$PHONE" --arg email "$EMAIL" '{submission_id:$key,tipo_interesse:"comprar",nome:"RATE LIMIT SMOKE",whatsapp:$phone,email:$email,pais:"Brazil",consentimento:"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}')
+          seen_200=0
+          seen_429=0
+          unexpected=0
+          : > /tmp/rate-codes.txt
+
+          for i in $(seq 1 100); do
+            code=$(curl -sS --max-time 15 -o /tmp/rate-body.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" \
+              -H "Origin: ${PREVIEW_URL}" \
+              -H "Content-Type: application/json" \
+              --data "$payload")
+            echo "$code" >> /tmp/rate-codes.txt
+
+            if [ "$code" = "200" ]; then
+              seen_200=1
+            elif [ "$code" = "429" ]; then
+              seen_429=1
+              break
+            else
+              unexpected=1
+              echo "HTTP inesperado=${code}"
+              cat /tmp/rate-body.json || true
+              break
+            fi
+            sleep 0.2
+          done
+
+          echo "Distribuição:"
+          sort /tmp/rate-codes.txt | uniq -c
+          test "$unexpected" -eq 0
+          test "$seen_200" -eq 1
+          test "$seen_429" -eq 1
+          echo "PASS: rate limiter saiu de permissivo para 429 dentro da janela"
+
+      - name: Limpar lead sintético
+        if: always() && steps.seed.outputs.key != ''
+        shell: bash
+        env:
+          KEY: ${{ steps.seed.outputs.key }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          body=$(jq -nc --arg key "$KEY" '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$key]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "PASS: lead sintético removido"
