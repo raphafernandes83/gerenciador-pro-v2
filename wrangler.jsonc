@@ -21,5 +21,13 @@
       "database_id": "9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SHEET_RETRY_QUEUE",
+        "queue": "gerenciador-pro-sheet-retry"
+      }
+    ]
+  }
 }
