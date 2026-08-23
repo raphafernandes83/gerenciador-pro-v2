@@ -33,28 +33,17 @@ jobs:
       BOOTSTRAP_BUILD_UUID: 69fbbd6b-de5d-4e22-b0e5-168641be3394
     steps:
       - name: Auditar token e Workers Builds
-        id: audit
         shell: bash
         run: |
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "Token ausente"; exit 1; }
-
-          verify=$(curl --fail-with-body -sS \
-            "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          verify=$(curl --fail-with-body -sS "https://api.cloudflare.com/client/v4/user/tokens/verify" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           test "$(jq -r '.success // false' <<<"$verify")" = "true"
-
-          build=$(curl --fail-with-body -sS \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          build=$(curl --fail-with-body -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
           test -n "$tag"
-
-          triggers=$(curl --fail-with-body -sS \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          triggers=$(curl --fail-with-body -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           test "$(jq -r '.success // false' <<<"$triggers")" = "true"
-
           prod_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler deploy") | .branch_includes] | any(. == ["production"])' <<<"$triggers")
           preview_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler versions upload") | .branch_excludes] | any(. == ["production"])' <<<"$triggers")
           test "$prod_ok" = "true" && test "$preview_ok" = "true"
@@ -77,14 +66,12 @@ jobs:
           set -euo pipefail
           databases=$(npx --yes wrangler@latest d1 list --json)
           database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
-
           if [ -z "$database_id" ] || [ "$database_id" = "null" ]; then
             echo "Criando D1 ${D1_NAME}..."
             npx --yes wrangler@latest d1 create "$D1_NAME" --location enam
             databases=$(npx --yes wrangler@latest d1 list --json)
             database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
           fi
-
           test -n "$database_id" && test "$database_id" != "null"
           echo "database_id=$database_id" >> "$GITHUB_OUTPUT"
           echo "PASS: D1 id ${database_id}"
@@ -99,8 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          result=$(npx --yes wrangler@latest d1 execute "$D1_NAME" --remote \
-            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('leads','system_events') ORDER BY name;" --json)
+          result=$(npx --yes wrangler@latest d1 execute "$D1_NAME" --remote --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('leads','system_events') ORDER BY name;" --json)
           leads_ok=$(jq -r '[.[].results[]?.name] | index("leads") != null' <<<"$result")
           events_ok=$(jq -r '[.[].results[]?.name] | index("system_events") != null' <<<"$result")
           test "$leads_ok" = "true" && test "$events_ok" = "true"
@@ -113,11 +99,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DATABASE_ID: ${{ steps.db.outputs.database_id }}
         run: |
-          body="### D1 criado e validado
-
-✅ \`${D1_NAME}\` pronto.
-✅ Tabelas \`leads\` e \`system_events\` prontas.
-✅ Database ID: \`${DATABASE_ID}\`.
-
-A próxima automação vai vincular o banco ao Worker e testar a API de cadastro no preview."
+          body=$(printf '### D1 criado e validado\n\n✅ `%s` pronto.\n✅ Tabelas `leads` e `system_events` prontas.\n✅ Database ID: `%s`.\n\nPróximo: vincular D1 ao Worker e testar `/api/register` no preview.' "$D1_NAME" "$DATABASE_ID")
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
