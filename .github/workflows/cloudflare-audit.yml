@@ -1,6 +1,10 @@
 name: Cloudflare audit
 
 on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-audit.yml"
   push:
     branches:
       - "infra/cloudflare-foundation"
