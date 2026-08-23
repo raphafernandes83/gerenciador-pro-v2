@@ -1,0 +1,136 @@
+name: Promote to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite PROMOTE para confirmar'
+        required: true
+        type: string
+      production_url:
+        description: 'URL final, ex.: https://seudominio.com'
+        required: true
+        type: string
+      target_sha:
+        description: 'SHA de main a promover; vazio usa HEAD de main'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - name: Exigir confirmação explícita
+        shell: bash
+        run: |
+          test '${{ inputs.confirm }}' = 'PROMOTE'
+          case '${{ inputs.production_url }}' in
+            https://*) ;;
+            *) echo 'production_url precisa ser HTTPS'; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Fixar alvo e estado anterior
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main production
+          target='${{ inputs.target_sha }}'
+          if [ -z "$target" ]; then target=$(git rev-parse origin/main); fi
+          git cat-file -e "${target}^{commit}"
+          git merge-base --is-ancestor "$target" origin/main
+          previous=$(git rev-parse origin/production)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "TARGET=${target}"
+          echo "PREVIOUS=${previous}"
+
+      - name: Gate — Apps Script seguro precisa estar publicado
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(curl -sS --max-time 15 "$SHEETS_MIRROR_URL")
+          echo "$response" | jq -e '.ok == true and .version == "2026-08-23.2" and .status == "ready"' >/dev/null
+          if echo "$response" | jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' >/dev/null; then
+            echo 'FAIL: Apps Script ainda expõe metadados da planilha'
+            exit 1
+          fi
+          echo 'PASS: Apps Script seguro publicado'
+
+      - name: Promover SHA aprovado para production
+        shell: bash
+        env:
+          TARGET: ${{ steps.refs.outputs.target }}
+        run: |
+          set -euo pipefail
+          git push origin "${TARGET}:refs/heads/production"
+          echo 'PASS: production avançou por fast-forward'
+
+      - name: Aguardar Cloudflare e executar smoke de produção
+        id: smoke
+        continue-on-error: true
+        shell: bash
+        env:
+          PRODUCTION_URL: ${{ inputs.production_url }}
+        run: |
+          set -euo pipefail
+          base="${PRODUCTION_URL%/}"
+          for attempt in $(seq 1 90); do
+            health_code=$(curl -sS --max-time 10 -o /tmp/prod-health.json -w '%{http_code}' "${base}/api/health" || true)
+            if [ "$health_code" = '200' ] && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/prod-health.json >/dev/null 2>&1; then
+              payload='{"tipo_interesse":"comprar","nome":"PRODUCTION SECURITY SMOKE","whatsapp":"+5521999999999","email":"prod-security-smoke@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+              code=$(curl -sS --max-time 15 -o /tmp/prod-register.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$payload" || true)
+              if [ "$code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod-register.json >/dev/null 2>&1; then
+                echo 'PASS: produção saudável e Turnstile real configurado'
+                exit 0
+              fi
+            fi
+            sleep 4
+          done
+          echo 'FAIL: produção não passou smoke dentro da janela'
+          cat /tmp/prod-health.json 2>/dev/null || true
+          cat /tmp/prod-register.json 2>/dev/null || true
+          exit 1
+
+      - name: Rollback automático se o smoke falhar
+        if: steps.smoke.outcome != 'success'
+        shell: bash
+        env:
+          PREVIOUS: ${{ steps.refs.outputs.previous }}
+        run: |
+          set -euo pipefail
+          git fetch origin production
+          git checkout -B production origin/production
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git read-tree --reset -u "$PREVIOUS"
+          git commit -m "Rollback production após smoke reprovado" || true
+          git push origin HEAD:production
+          echo "ROLLBACK enviado para árvore anterior ${PREVIOUS}"
+
+      - name: Gate final
+        if: always()
+        shell: bash
+        env:
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          if [ "$SMOKE" != 'success' ]; then
+            echo 'NO-GO: smoke reprovado; rollback disparado'
+            exit 1
+          fi
+          echo 'GO: promoção concluída e smoke aprovado'
