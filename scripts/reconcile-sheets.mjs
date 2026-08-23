@@ -14,6 +14,7 @@ const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 const databaseId = process.env.D1_DATABASE_ID;
 const sheetsUrl = process.env.SHEETS_MIRROR_URL;
 const limit = Math.min(Math.max(Number(process.env.RECONCILE_LIMIT || 50), 1), 100);
+const targetSubmissionId = String(process.env.RECONCILE_SUBMISSION_ID || "").trim();
 const api = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 
 async function query(sql, params = []) {
@@ -115,16 +116,21 @@ async function currentStatus(submissionId) {
   return rows[0]?.sheet_sync_status || null;
 }
 
-const rows = await query(
-  `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,link_canal,
-          observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,
-          enviado_em_local,payload_json,sheet_sync_attempts
-   FROM leads
-   WHERE sheet_sync_status IN ('retry','pending')
-   ORDER BY created_at ASC
-   LIMIT ?`,
-  [limit]
-);
+let selectionSql = `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,link_canal,
+                            observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,
+                            enviado_em_local,payload_json,sheet_sync_attempts
+                     FROM leads
+                     WHERE sheet_sync_status IN ('retry','pending')`;
+const selectionParams = [];
+
+if (targetSubmissionId) {
+  selectionSql += " AND submission_id=?";
+  selectionParams.push(targetSubmissionId);
+}
+selectionSql += " ORDER BY created_at ASC LIMIT ?";
+selectionParams.push(targetSubmissionId ? 1 : limit);
+
+const rows = await query(selectionSql, selectionParams);
 
 let synced = 0;
 let failed = 0;
@@ -183,5 +189,5 @@ for (const row of rows) {
   }
 }
 
-console.log(JSON.stringify({ checked: rows.length, synced, failed, raceResolved }));
+console.log(JSON.stringify({ checked: rows.length, synced, failed, raceResolved, targeted: Boolean(targetSubmissionId) }));
 if (failed > 0 && process.env.FAIL_ON_RECONCILE_ERROR === "1") process.exit(1);
