@@ -1,0 +1,46 @@
+name: Apps Script secure source check
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/apps-script-secure-check.yml"
+      - "scripts/apps-script/Code.secure.gs"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/apps-script-secure-check.yml"
+      - "scripts/apps-script/Code.secure.gs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar sintaxe V8
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/apps-script/Code.secure.gs /tmp/apps-script-secure.js
+          node --check /tmp/apps-script-secure.js
+
+      - name: Validar gates de seguranca
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=scripts/apps-script/Code.secure.gs
+          grep -F 'MIRROR_AUTH_URL' "$file" >/dev/null
+          grep -F 'authorizeMirrorPayload_' "$file" >/dev/null
+          grep -F 'findSubmissionId_' "$file" >/dev/null
+          grep -F 'OFFICIAL_SPREADSHEET_UNAVAILABLE' "$file" >/dev/null
+          grep -F 'status: "ready"' "$file" >/dev/null
+          ! grep -F 'postMessage(' "$file" >/dev/null
+          ! grep -F 'HtmlService' "$file" >/dev/null
+          ! grep -F 'spreadsheetUrl:' "$file" >/dev/null
+          ! grep -F 'spreadsheetId:' "$file" >/dev/null
+          echo "PASS: Apps Script seguro preparado"
