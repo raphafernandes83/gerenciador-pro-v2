@@ -6,6 +6,10 @@
 .wrangler/**
 node_modules
 node_modules/**
+src
+src/**
+migrations
+migrations/**
 .env
 .env.*
 .dev.vars
