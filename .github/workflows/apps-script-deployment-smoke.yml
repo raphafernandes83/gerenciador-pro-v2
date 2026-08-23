@@ -6,12 +6,20 @@ on:
     paths:
       - ".github/workflows/apps-script-deployment-smoke.yml"
       - "scripts/apps-script/Code.secure.gs"
+      - "scripts/apps-script/appsscript.json"
+      - "scripts/reconcile-sheets.mjs"
   push:
     branches: ["infra/cloudflare-foundation"]
     paths:
       - ".github/workflows/apps-script-deployment-smoke.yml"
       - "scripts/apps-script/Code.secure.gs"
+      - "scripts/apps-script/appsscript.json"
+      - "scripts/reconcile-sheets.mjs"
   workflow_dispatch:
+
+concurrency:
+  group: gp-shared-sheets-test-contact
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -21,8 +29,14 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
       SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      TEST_EMAIL: teste.gerenciador.pro.20260819@example.com
     steps:
+      - uses: actions/checkout@v4
+
       - name: Validar GET v3 ready
         shell: bash
         run: |
@@ -45,3 +59,66 @@ jobs:
           echo "Apps Script POST result=${error}"
           echo "$response" | jq -e '.ok == false and .error == "mirror_unauthorized"' >/dev/null
           echo 'PASS: Apps Script alcança /api/mirror/authorize e rejeita lead inexistente'
+
+      - name: Preparar fixture retry para prova do reconciliador
+        id: retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          id="apps-reconcile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "submission_id=$id" >> "$GITHUB_OUTPUT"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in \
+            "DELETE FROM system_events WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
+            "DELETE FROM leads WHERE email_norm = ?"; do
+            body=$(jq -nc --arg sql "$sql" --arg email "$TEST_EMAIL" '{sql:$sql,params:[$email]}')
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body" >/dev/null
+          done
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
+          payload_json='{"tipo_interesse":"comprar","nome":"TESTE CHATGPT — PODE APAGAR","whatsapp":"+5521900000000","email":"teste.gerenciador.pro.20260819@example.com","pais":"Brazil","consentimento":"Sim","origem":"apps-reconcile-proof"}'
+          body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","TESTE CHATGPT — PODE APAGAR","+5521900000000","5521900000000","teste.gerenciador.pro.20260819@example.com","teste.gerenciador.pro.20260819@example.com","Brazil",1,"apps-reconcile-proof",$payload]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+          token_ok=$(jq -nc --arg id "$id" '{sql:"SELECT CASE WHEN length(mirror_auth_token)=64 THEN 1 ELSE 0 END AS token_ok FROM leads WHERE submission_id=?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$token_ok")
+          test "$(jq -r '.result[0].results[0].token_ok // 0' <<<"$response")" = 1
+          echo 'PASS: fixture retry com capability token preparado'
+
+      - name: Executar reconciliador isolado
+        env:
+          RECONCILE_SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+          FAIL_ON_RECONCILE_ERROR: "1"
+        run: node scripts/reconcile-sheets.mjs
+
+      - name: Provar retry para synced via reconciliador
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="SELECT sheet_sync_status,sheet_sync_attempts,CASE WHEN mirror_auth_token IS NULL OR mirror_auth_token='' THEN 1 ELSE 0 END AS token_cleared FROM leads WHERE submission_id=? LIMIT 1"
+          body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")" = synced
+          test "$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")" -ge 1
+          test "$(jq -r '.result[0].results[0].token_cleared // 0' <<<"$response")" = 1
+          echo 'PASS: D1 retry -> reconciliador -> Apps Script -> Sheets -> D1 synced; token destruído'
+
+      - name: Limpar fixture de reconciliação
+        if: always() && steps.retry.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in "DELETE FROM system_events WHERE submission_id=?" "DELETE FROM leads WHERE submission_id=?"; do
+            body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+            test "$(jq -r '.success // false' <<<"$response")" = true
+          done
+          echo 'PASS: fixture de reconciliação removido'
