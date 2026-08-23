@@ -30,6 +30,11 @@ function validEmail(value) {
   return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function errorReason(error, fallback = "unknown_error") {
+  if (error?.name === "AbortError") return "sheet_timeout";
+  return clean(error?.message || error, 500) || fallback;
+}
+
 async function readPayload(request) {
   const type = request.headers.get("content-type") || "";
   if (type.includes("application/json")) return await request.json();
@@ -140,7 +145,7 @@ async function enqueueSheetRetry(env, submissionId, reason) {
     await recordSystemEvent(env, "sheet_retry_queued", submissionId, { reason });
     return true;
   } catch (error) {
-    const queueError = clean(error?.message || error, 500) || "queue_send_failed";
+    const queueError = errorReason(error, "queue_send_failed");
     console.error("sheet_queue_failed", submissionId, queueError);
     await recordSystemEvent(env, "sheet_queue_failed", submissionId, {
       reason,
@@ -156,16 +161,12 @@ async function scheduleSheetRetry(env, submissionId, reason) {
   } catch (error) {
     console.error("sheet_retry_status_failed", submissionId, error);
   }
-
   await enqueueSheetRetry(env, submissionId, reason);
 }
 
-async function syncLeadToSheet(env, record, payload) {
+async function postLeadToSheet(env, record, payload) {
   const endpoint = clean(env.SHEETS_MIRROR_URL, 2000);
-  if (!endpoint) {
-    await scheduleSheetRetry(env, record.submission_id, "mirror_not_configured");
-    return;
-  }
+  if (!endpoint) throw new Error("mirror_not_configured");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
@@ -194,19 +195,104 @@ async function syncLeadToSheet(env, record, payload) {
       throw new Error(clean(result?.error || `sheet_http_${response.status}`, 500));
     }
 
+    return result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function syncLeadToSheet(env, record, payload) {
+  try {
+    const result = await postLeadToSheet(env, record, payload);
     await markSheetSynced(env, record.submission_id, {
+      source: "initial",
       duplicate: Boolean(result.duplicate),
       sheetName: clean(result.sheetName, 200) || null
     });
   } catch (error) {
-    const reason = error?.name === "AbortError"
-      ? "sheet_timeout"
-      : clean(error?.message || error, 500) || "sheet_unknown_error";
-
+    const reason = errorReason(error, "sheet_unknown_error");
     console.error("sheet_sync_failed", record.submission_id, reason);
     await scheduleSheetRetry(env, record.submission_id, reason);
-  } finally {
-    clearTimeout(timeout);
+  }
+}
+
+async function loadLeadForRetry(env, submissionId) {
+  return await env.DB.prepare(
+    `SELECT submission_id, tipo_interesse, nome, whatsapp, email, pais,
+            canal_divulgacao, link_canal, observacao, origem,
+            utm_source, utm_medium, utm_campaign, pagina_url, user_agent,
+            enviado_em_local, payload_json, sheet_sync_status
+     FROM leads WHERE submission_id = ? LIMIT 1`
+  ).bind(submissionId).first();
+}
+
+async function processRetryMessage(message, env) {
+  const body = message?.body || {};
+  const submissionId = clean(body.submissionId, 120);
+
+  if (body.type !== "sheet_mirror_retry" || !submissionId) {
+    await recordSystemEvent(env, "sheet_retry_invalid_message", null, {
+      attempts: Number(message?.attempts || 0)
+    });
+    message.ack();
+    return;
+  }
+
+  const lead = await loadLeadForRetry(env, submissionId);
+  if (!lead) {
+    await recordSystemEvent(env, "sheet_retry_missing_lead", submissionId, {
+      attempts: Number(message?.attempts || 0)
+    });
+    message.ack();
+    return;
+  }
+
+  if (lead.sheet_sync_status === "synced") {
+    await recordSystemEvent(env, "sheet_retry_already_synced", submissionId, {
+      attempts: Number(message?.attempts || 0)
+    });
+    message.ack();
+    return;
+  }
+
+  let originalPayload = {};
+  try {
+    originalPayload = lead.payload_json ? JSON.parse(lead.payload_json) : {};
+  } catch {
+    originalPayload = {};
+  }
+
+  try {
+    const result = await postLeadToSheet(env, lead, originalPayload);
+    await markSheetSynced(env, submissionId, {
+      source: "queue",
+      queueAttempts: Number(message?.attempts || 0),
+      duplicate: Boolean(result.duplicate),
+      sheetName: clean(result.sheetName, 200) || null
+    });
+    await recordSystemEvent(env, "sheet_retry_consumer_succeeded", submissionId, {
+      attempts: Number(message?.attempts || 0)
+    });
+    message.ack();
+  } catch (error) {
+    const reason = errorReason(error, "sheet_retry_consumer_failed");
+    try {
+      await markSheetRetry(env, submissionId, reason, {
+        source: "queue",
+        queueAttempts: Number(message?.attempts || 0)
+      });
+    } catch (statusError) {
+      console.error("sheet_consumer_status_failed", submissionId, statusError);
+    }
+
+    await recordSystemEvent(env, "sheet_retry_consumer_failed", submissionId, {
+      reason,
+      attempts: Number(message?.attempts || 0)
+    });
+
+    const attempts = Math.max(1, Number(message?.attempts || 1));
+    const delaySeconds = Math.min(900, 60 * (2 ** Math.min(attempts - 1, 4)));
+    message.retry({ delaySeconds });
   }
 }
 
@@ -250,15 +336,10 @@ async function register(request, env, ctx) {
   const existingSubmission = await env.DB.prepare(
     "SELECT submission_id FROM leads WHERE submission_id = ? LIMIT 1"
   ).bind(submissionId).first();
-
-  if (existingSubmission) {
-    return json({ ok: true, duplicate: true, submissionId });
-  }
+  if (existingSubmission) return json({ ok: true, duplicate: true, submissionId });
 
   const duplicate = await findDuplicate(env, interest, whatsappNorm, emailNorm);
-  if (duplicate) {
-    return json({ ok: true, duplicate: true, submissionId: duplicate.submission_id });
-  }
+  if (duplicate) return json({ ok: true, duplicate: true, submissionId: duplicate.submission_id });
 
   const record = {
     submission_id: submissionId,
@@ -291,36 +372,19 @@ async function register(request, env, ctx) {
         pagina_url, user_agent, enviado_em_local, payload_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
-      record.submission_id,
-      record.tipo_interesse,
-      record.nome,
-      record.whatsapp,
-      record.whatsapp_norm,
-      record.email,
-      record.email_norm,
-      record.pais,
-      record.consentimento,
-      record.canal_divulgacao,
-      record.link_canal,
-      record.observacao,
-      record.origem,
-      record.utm_source,
-      record.utm_medium,
-      record.utm_campaign,
-      record.pagina_url,
-      record.user_agent,
-      record.enviado_em_local,
-      JSON.stringify(payload)
+      record.submission_id, record.tipo_interesse, record.nome, record.whatsapp,
+      record.whatsapp_norm, record.email, record.email_norm, record.pais,
+      record.consentimento, record.canal_divulgacao, record.link_canal,
+      record.observacao, record.origem, record.utm_source, record.utm_medium,
+      record.utm_campaign, record.pagina_url, record.user_agent,
+      record.enviado_em_local, JSON.stringify(payload)
     ).run();
 
     if (!result.success) throw new Error("d1_insert_failed");
 
     const mirrorPromise = syncLeadToSheet(env, record, payload);
-    if (ctx?.waitUntil) {
-      ctx.waitUntil(mirrorPromise);
-    } else {
-      mirrorPromise.catch((error) => console.error("sheet_sync_unhandled", error));
-    }
+    if (ctx?.waitUntil) ctx.waitUntil(mirrorPromise);
+    else mirrorPromise.catch((error) => console.error("sheet_sync_unhandled", error));
 
     return json({ ok: true, duplicate: false, submissionId });
   } catch (error) {
@@ -328,7 +392,6 @@ async function register(request, env, ctx) {
     if (duplicateAfterRace) {
       return json({ ok: true, duplicate: true, submissionId: duplicateAfterRace.submission_id });
     }
-
     console.error("registration_failed", error);
     return json({ ok: false, error: "storage_unavailable" }, 503);
   }
@@ -352,18 +415,21 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/health" && request.method === "GET") {
-      return health(env);
-    }
+    if (url.pathname === "/api/health" && request.method === "GET") return health(env);
+    if (url.pathname === "/api/register" && request.method === "POST") return register(request, env, ctx);
+    if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
+    if (env.ASSETS) return env.ASSETS.fetch(request);
+    return json({ ok: false, error: "not_found" }, 404);
+  },
 
-    if (url.pathname === "/api/register" && request.method === "POST") {
-      return register(request, env, ctx);
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      try {
+        await processRetryMessage(message, env);
+      } catch (error) {
+        console.error("queue_message_unhandled", error);
+        message.retry({ delaySeconds: 60 });
+      }
     }
-
-    if (url.pathname.startsWith("/api/")) {
-      return json({ ok: false, error: "not_found" }, 404);
-    }
-
-    return env.ASSETS.fetch(request);
   }
 };
