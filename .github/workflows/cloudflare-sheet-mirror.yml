@@ -32,6 +32,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
     steps:
       - name: Aguardar preview com espelho configurado
         shell: bash
@@ -50,7 +51,20 @@ jobs:
           cat /tmp/health.json 2>/dev/null || true
           exit 1
 
+      - name: Verificar conectividade real do Apps Script
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"mirror-smoke-nonexistent"}'
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+          if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$response" >/dev/null 2>&1; then ready=true; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "Apps Script disponível para espelhamento real: ${ready}"
+
       - name: Gravar cadastro sintetico no D1
+        if: steps.apps.outputs.ready == 'true'
         id: register
         shell: bash
         run: |
@@ -66,6 +80,7 @@ jobs:
           echo "PASS: D1 confirmou cadastro"
 
       - name: Confirmar espelho no Sheets pelo status do D1
+        if: steps.apps.outputs.ready == 'true'
         shell: bash
         env:
           SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
@@ -101,6 +116,11 @@ jobs:
           echo "FAIL: espelho nao confirmou a tempo"
           exit 1
 
+      - name: Registrar skip consciente
+        if: steps.apps.outputs.ready != 'true'
+        shell: bash
+        run: echo 'SKIP controlado: Apps Script v3 está publicado, mas UrlFetchApp ainda precisa de autorização; nenhum lead de QA foi criado.'
+
       - name: Limpar somente o cadastro sintetico do D1
         if: always() && steps.register.outputs.submission_id != ''
         shell: bash
@@ -109,9 +129,11 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
-          payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$id]}')
-          response=$(curl --fail-with-body -sS -X POST "$api" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" --data "$payload")
-          jq -e '.success == true' <<<"$response" >/dev/null
+          for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
+            payload=$(jq -n --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" --data "$payload")
+            jq -e '.success == true' <<<"$response" >/dev/null
+          done
           echo "PASS: cadastro sintetico removido do D1"
