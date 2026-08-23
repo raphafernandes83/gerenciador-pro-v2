@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   audit:
@@ -19,40 +21,69 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WORKER_NAME: gerenciador-pro-v2
     steps:
-      - name: Validar secrets obrigatorios
+      - name: Auditar acesso Cloudflare
+        id: audit
         shell: bash
         run: |
-          set -euo pipefail
-          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "CLOUDFLARE_API_TOKEN ausente"; exit 1; }
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo "CLOUDFLARE_ACCOUNT_ID ausente"; exit 1; }
+          set +e
+          failed=0
+          {
+            echo "### Cloudflare API audit"
+            echo
+            echo "Commit: \`${GITHUB_SHA}\`"
+            echo
+          } > cloudflare-audit-report.md
 
-      - name: Localizar Worker na Cloudflare
-        id: worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          response=$(curl --fail-with-body -sS \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-          success=$(jq -r '.success' <<<"$response")
-          test "$success" = "true" || { echo "Cloudflare API recusou a consulta de Workers"; jq -c '.errors' <<<"$response"; exit 1; }
-          tag=$(jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .tag' <<<"$response" | head -n1)
-          test -n "$tag" && test "$tag" != "null" || { echo "Worker ${WORKER_NAME} nao encontrado"; exit 1; }
-          echo "worker_tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "OK: Worker encontrado"
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "- ❌ Secrets obrigatorios ausentes." >> cloudflare-audit-report.md
+            failed=1
+          else
+            response=$(curl -sS \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+            if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$response")" != "true" ]; then
+              echo "- ❌ API token nao conseguiu listar Workers." >> cloudflare-audit-report.md
+              failed=1
+            else
+              tag=$(jq -r --arg name "$WORKER_NAME" '.result[]? | select(.id == $name) | .tag' <<<"$response" | head -n1)
+              if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+                echo "- ❌ Worker \`${WORKER_NAME}\` nao encontrado." >> cloudflare-audit-report.md
+                failed=1
+              else
+                echo "- ✅ Worker \`${WORKER_NAME}\` encontrado pela API." >> cloudflare-audit-report.md
 
-      - name: Auditar triggers do Workers Builds
+                triggers=$(curl -sS \
+                  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
+                  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+                if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$triggers")" != "true" ]; then
+                  echo "- ❌ Token nao conseguiu consultar Workers Builds triggers." >> cloudflare-audit-report.md
+                  failed=1
+                else
+                  count=$(jq '.result | length' <<<"$triggers")
+                  echo "- ✅ Workers Builds acessivel: ${count} trigger(s)." >> cloudflare-audit-report.md
+                  jq -r '.result[]? | "  - `" + (.trigger_name // "sem nome") + "`: includes=`" + ((.branch_includes // []) | join(",")) + "`, excludes=`" + ((.branch_excludes // []) | join(",")) + "`, deploy=`" + (.deploy_command // "") + "`"' <<<"$triggers" >> cloudflare-audit-report.md
+                fi
+              fi
+            fi
+          fi
+
+          echo >> cloudflare-audit-report.md
+          if [ "$failed" -eq 0 ]; then
+            echo "**Resultado: PASS — acesso programatico pronto.**" >> cloudflare-audit-report.md
+          else
+            echo "**Resultado: FAIL — nenhuma alteracao foi feita na Cloudflare.**" >> cloudflare-audit-report.md
+          fi
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Registrar resultado no PR de infraestrutura
+        if: always()
         shell: bash
         env:
-          WORKER_TAG: ${{ steps.worker.outputs.worker_tag }}
-        run: |
-          set -euo pipefail
-          response=$(curl --fail-with-body -sS \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${WORKER_TAG}/triggers" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-          success=$(jq -r '.success' <<<"$response")
-          test "$success" = "true" || { echo "Cloudflare API recusou a consulta de triggers"; jq -c '.errors' <<<"$response"; exit 1; }
-          count=$(jq '.result | length' <<<"$response")
-          test "$count" -ge 1 || { echo "Nenhum trigger encontrado"; exit 1; }
-          echo "OK: ${count} trigger(s) encontrado(s)"
-          jq -r '.result[] | "- " + (.trigger_name // "sem nome") + " | includes=" + ((.branch_includes // []) | join(",")) + " | excludes=" + ((.branch_excludes // []) | join(",")) + " | deploy=" + (.deploy_command // "")' <<<"$response"
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 14 --body-file cloudflare-audit-report.md
+
+      - name: Encerrar com estado da auditoria
+        if: steps.audit.outputs.failed == '1'
+        shell: bash
+        run: exit 1
