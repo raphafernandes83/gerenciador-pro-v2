@@ -232,6 +232,22 @@ function mirrorPayloadMatches(expected, supplied) {
   return keys.every((key) => mirrorValue(supplied?.[key], 5000) === expected[key]);
 }
 
+async function mirrorTokenMatches(expected, supplied) {
+  const expectedToken = mirrorValue(expected, 128);
+  const suppliedToken = mirrorValue(supplied, 128);
+  if (!/^[a-f0-9]{64}$/.test(expectedToken) || !/^[a-f0-9]{64}$/.test(suppliedToken)) return false;
+  const encoder = new TextEncoder();
+  const [expectedHash, suppliedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(expectedToken)),
+    crypto.subtle.digest("SHA-256", encoder.encode(suppliedToken))
+  ]);
+  const a = new Uint8Array(expectedHash);
+  const b = new Uint8Array(suppliedHash);
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 async function authorizeMirrorWrite(request, env) {
   if (requestTooLarge(request, MAX_MIRROR_AUTH_BYTES)) {
     return json({ ok: false, error: "payload_too_large" }, 413);
@@ -255,11 +271,16 @@ async function authorizeMirrorWrite(request, env) {
     const lead = await env.DB.prepare(
       `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,
               link_canal,observacao,origem,utm_source,utm_medium,utm_campaign,
-              pagina_url,user_agent,enviado_em_local,payload_json,sheet_sync_status
+              pagina_url,user_agent,enviado_em_local,payload_json,sheet_sync_status,mirror_auth_token
        FROM leads WHERE submission_id = ? LIMIT 1`
     ).bind(submissionId).first();
 
     if (!lead || !["pending", "retry"].includes(String(lead.sheet_sync_status || ""))) {
+      return json({ ok: false, error: "mirror_unauthorized" }, 403);
+    }
+
+    if (!(await mirrorTokenMatches(lead.mirror_auth_token, supplied?._mirror_auth_token))) {
+      console.warn("mirror_token_mismatch");
       return json({ ok: false, error: "mirror_unauthorized" }, 403);
     }
 

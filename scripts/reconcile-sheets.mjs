@@ -62,6 +62,7 @@ function buildPayload(row) {
   const original = safeJson(row.payload_json);
   return {
     ...original,
+    _mirror_auth_token: String(row.mirror_auth_token || "").trim().slice(0, 128),
     submission_id: row.submission_id,
     tipo_interesse: row.tipo_interesse,
     nome: row.nome,
@@ -83,6 +84,9 @@ function buildPayload(row) {
 }
 
 async function mirror(row) {
+  if (!/^[a-f0-9]{64}$/.test(String(row.mirror_auth_token || "").trim())) {
+    throw new Error("mirror_auth_token_missing");
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
@@ -118,7 +122,7 @@ async function currentStatus(submissionId) {
 
 let selectionSql = `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,link_canal,
                             observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,
-                            enviado_em_local,payload_json,sheet_sync_attempts
+                            enviado_em_local,payload_json,sheet_sync_attempts,mirror_auth_token
                      FROM leads
                      WHERE sheet_sync_status IN ('retry','pending')`;
 const selectionParams = [];

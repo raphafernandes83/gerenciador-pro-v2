@@ -74,6 +74,7 @@ function buildSheetPayload(row) {
   const original = safeJson(row.payload_json);
   return {
     ...original,
+    _mirror_auth_token: clean(row.mirror_auth_token, 128),
     submission_id: row.submission_id,
     tipo_interesse: row.tipo_interesse,
     nome: row.nome,
@@ -105,7 +106,7 @@ async function loadLead(submissionId) {
   const rows = await query(
     `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,link_canal,
             observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,
-            enviado_em_local,payload_json,sheet_sync_status,sheet_sync_attempts
+            enviado_em_local,payload_json,sheet_sync_status,sheet_sync_attempts,mirror_auth_token
      FROM leads WHERE submission_id=? LIMIT 1`,
     [submissionId]
   );
@@ -113,6 +114,9 @@ async function loadLead(submissionId) {
 }
 
 async function mirror(row) {
+  if (!/^[a-f0-9]{64}$/.test(clean(row.mirror_auth_token, 128))) {
+    throw new Error("mirror_auth_token_missing");
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {

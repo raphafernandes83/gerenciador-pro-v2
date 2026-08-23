@@ -43,6 +43,12 @@ async function sha256Hex(value) {
     .join("");
 }
 
+function randomHex(bytes = 32) {
+  return [...crypto.getRandomValues(new Uint8Array(bytes))]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function enforceRegistrationRateLimits(request, env, interest, phone, email) {
   if (
     !env.REGISTRATION_CONTACT_LIMITER ||
@@ -107,6 +113,7 @@ async function findDuplicate(env, interest, phone, email) {
 
 function buildSheetPayload(record, payload) {
   return {
+    _mirror_auth_token: clean(record.mirror_auth_token, 128),
     submission_id: record.submission_id,
     tipo_interesse: record.tipo_interesse,
     nome: record.nome,
@@ -287,7 +294,7 @@ async function loadLeadForRetry(env, submissionId) {
     `SELECT submission_id, tipo_interesse, nome, whatsapp, email, pais,
             canal_divulgacao, link_canal, observacao, origem,
             utm_source, utm_medium, utm_campaign, pagina_url, user_agent,
-            enviado_em_local, payload_json, sheet_sync_status
+            enviado_em_local, payload_json, sheet_sync_status, mirror_auth_token
      FROM leads WHERE submission_id = ? LIMIT 1`
   ).bind(submissionId).first();
 }
@@ -447,7 +454,8 @@ async function register(request, env, ctx) {
     utm_campaign: clean(payload.utm_campaign, 500) || null,
     pagina_url: clean(payload.pagina_url, 2000) || null,
     user_agent: clean(payload.user_agent, 1000) || null,
-    enviado_em_local: clean(payload.enviado_em_local, 100) || null
+    enviado_em_local: clean(payload.enviado_em_local, 100) || null,
+    mirror_auth_token: randomHex(32)
   };
 
   try {
@@ -456,15 +464,15 @@ async function register(request, env, ctx) {
         submission_id, tipo_interesse, nome, whatsapp, whatsapp_norm,
         email, email_norm, pais, consentimento, canal_divulgacao, link_canal,
         observacao, origem, utm_source, utm_medium, utm_campaign,
-        pagina_url, user_agent, enviado_em_local, payload_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        pagina_url, user_agent, enviado_em_local, payload_json, mirror_auth_token
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       record.submission_id, record.tipo_interesse, record.nome, record.whatsapp,
       record.whatsapp_norm, record.email, record.email_norm, record.pais,
       record.consentimento, record.canal_divulgacao, record.link_canal,
       record.observacao, record.origem, record.utm_source, record.utm_medium,
       record.utm_campaign, record.pagina_url, record.user_agent,
-      record.enviado_em_local, JSON.stringify(payload)
+      record.enviado_em_local, JSON.stringify(payload), record.mirror_auth_token
     ).run();
 
     if (!result.success) throw new Error("d1_insert_failed");

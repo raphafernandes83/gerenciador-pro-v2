@@ -1,6 +1,6 @@
 /**
  * GERENCIADOR PRO — ESPELHO DE LEADS NO GOOGLE SHEETS
- * Versão: 2026-08-23.2
+ * Versão: 2026-08-23.3
  *
  * O D1/Cloudflare Worker é a fonte primária.
  * Este Apps Script funciona apenas como espelho.
@@ -9,7 +9,7 @@
  */
 
 const CONFIG = Object.freeze({
-  VERSION: "2026-08-23.2",
+  VERSION: "2026-08-23.3",
   SERVICE_NAME: "Gerenciador PRO Sheets Mirror",
   SPREADSHEET_NAME: "GERENCIADOR PRO — LEADS OFICIAL",
   CADASTROS_SHEET: "Cadastros",
@@ -224,7 +224,8 @@ function doPost(e) {
  */
 function authorizeMirrorPayload_(payload) {
   const submissionId = cleanText_(payload.submission_id);
-  if (!submissionId) {
+  const mirrorAuthToken = plainText_(payload._mirror_auth_token, 128);
+  if (!submissionId || !/^[a-f0-9]{64}$/.test(mirrorAuthToken)) {
     throw new Error("MIRROR_UNAUTHORIZED");
   }
 
@@ -263,6 +264,7 @@ function authorizeMirrorPayload_(payload) {
 
 function buildAuthorizationPayload_(payload) {
   return {
+    _mirror_auth_token: plainText_(payload._mirror_auth_token, 128),
     submission_id: plainText_(payload.submission_id, 120),
     tipo_interesse: plainText_(payload.tipo_interesse, 20),
     nome: plainText_(payload.nome, 160),
