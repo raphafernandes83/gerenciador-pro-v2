@@ -72,11 +72,17 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
-          for attempt in $(seq 1 20); do
-            payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
-            response=$(curl --fail-with-body -sS -X POST "$api" \
+          query_d1() {
+            local sql="$1"
+            local id="$2"
+            local body
+            body=$(jq -n --arg sql "$sql" --arg id "$id" '{sql:$sql,params:[$id]}')
+            curl --fail-with-body -sS -X POST "$api" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              -H "Content-Type: application/json" --data "$payload")
+              -H "Content-Type: application/json" --data "$body"
+          }
+          for attempt in $(seq 1 20); do
+            response=$(query_d1 'SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1' "$SUBMISSION_ID")
             status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
             attempts=$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")
             echo "Tentativa ${attempt}: status=${status}, attempts=${attempts}"
@@ -85,7 +91,9 @@ jobs:
               exit 0
             fi
             if [ "$status" = "retry" ]; then
-              echo "FAIL: Sheets mirror retornou retry"
+              event=$(query_d1 "SELECT details_json FROM system_events WHERE submission_id = ? AND event_type = 'sheet_sync_retry' ORDER BY id DESC LIMIT 1" "$SUBMISSION_ID")
+              reason=$(jq -r '.result[0].results[0].details_json // "{}" | fromjson? | .reason // "unknown"' <<<"$event")
+              echo "FAIL: Sheets mirror retornou retry; reason=${reason}"
               exit 1
             fi
             sleep 2
