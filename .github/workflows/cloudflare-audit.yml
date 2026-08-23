@@ -5,11 +5,17 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/cloudflare-audit.yml"
+      - "migrations/**"
+      - "src/**"
+      - "wrangler.jsonc"
   push:
     branches:
       - "infra/cloudflare-foundation"
     paths:
       - ".github/workflows/cloudflare-audit.yml"
+      - "migrations/**"
+      - "src/**"
+      - "wrangler.jsonc"
   workflow_dispatch:
 
 permissions:
@@ -24,120 +30,94 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
-      WORKER_NAME: gerenciador-pro-v2
       BOOTSTRAP_BUILD_UUID: 69fbbd6b-de5d-4e22-b0e5-168641be3394
     steps:
-      - name: Auditar acesso Cloudflare
+      - name: Auditar token e Workers Builds
         id: audit
         shell: bash
         run: |
-          set +e
-          failed=0
-          tag=""
-          {
-            echo "### Cloudflare API audit"
-            echo
-            echo "Commit: \`${GITHUB_SHA}\`"
-            echo
-          } > cloudflare-audit-report.md
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "Token ausente"; exit 1; }
 
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "- ❌ CLOUDFLARE_API_TOKEN ausente." >> cloudflare-audit-report.md
-            failed=1
-          else
-            verify=$(curl -sS \
-              "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-            if [ $? -eq 0 ] && [ "$(jq -r '.success // false' <<<"$verify")" = "true" ]; then
-              echo "- ✅ Token aceito pela Cloudflare." >> cloudflare-audit-report.md
-            else
-              echo "- ❌ Token rejeitado pela Cloudflare." >> cloudflare-audit-report.md
-              jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$verify" >> cloudflare-audit-report.md
-              failed=1
-            fi
+          verify=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          test "$(jq -r '.success // false' <<<"$verify")" = "true"
 
-            response=$(curl -sS \
-              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-            if [ $? -eq 0 ] && [ "$(jq -r '.success // false' <<<"$response")" = "true" ]; then
-              tag=$(jq -r --arg name "$WORKER_NAME" '.result[]? | select(.id == $name) | .tag' <<<"$response" | head -n1)
-              echo "- ✅ Worker tag obtido pela API de Workers." >> cloudflare-audit-report.md
-            else
-              echo "- ⚠️ API de Workers sem permissao; tentando bootstrap pelo Builds API." >> cloudflare-audit-report.md
-              build=$(curl -sS \
-                "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-              if [ $? -eq 0 ] && [ "$(jq -r '.success // false' <<<"$build")" = "true" ]; then
-                tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
-                echo "- ✅ Workers Builds API autorizado; Worker tag recuperado pelo build." >> cloudflare-audit-report.md
-              else
-                echo "- ❌ Token nao conseguiu consultar o Workers Builds API." >> cloudflare-audit-report.md
-                jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$build" >> cloudflare-audit-report.md
-                failed=1
-              fi
-            fi
+          build=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
+          test -n "$tag"
 
-            if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-              echo "- ❌ Nao foi possivel obter o identificador interno do Worker." >> cloudflare-audit-report.md
-              failed=1
-            else
-              triggers=$(curl -sS \
-                "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-              if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$triggers")" != "true" ]; then
-                echo "- ❌ Token nao conseguiu consultar Workers Builds triggers." >> cloudflare-audit-report.md
-                jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$triggers" >> cloudflare-audit-report.md
-                failed=1
-              else
-                count=$(jq '.result | length' <<<"$triggers")
-                echo "- ✅ Workers Builds acessivel: ${count} trigger(s)." >> cloudflare-audit-report.md
-                jq -r '.result[]? | "  - `" + (.trigger_name // "sem nome") + "`: uuid=`" + (.trigger_uuid // "") + "`, includes=`" + ((.branch_includes // []) | join(",")) + "`, excludes=`" + ((.branch_excludes // []) | join(",")) + "`, deploy=`" + (.deploy_command // "") + "`"' <<<"$triggers" >> cloudflare-audit-report.md
-              fi
-            fi
+          triggers=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          test "$(jq -r '.success // false' <<<"$triggers")" = "true"
+
+          prod_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler deploy") | .branch_includes] | any(. == ["production"])' <<<"$triggers")
+          preview_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler versions upload") | .branch_excludes] | any(. == ["production"])' <<<"$triggers")
+          test "$prod_ok" = "true" && test "$preview_ok" = "true"
+          echo "PASS: Cloudflare token + Builds + branch control"
+
+  d1:
+    needs: audit
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_NAME: gerenciador-pro-leads
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Criar ou localizar D1
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          databases=$(npx --yes wrangler@latest d1 list --json)
+          database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
+
+          if [ -z "$database_id" ] || [ "$database_id" = "null" ]; then
+            echo "Criando D1 ${D1_NAME}..."
+            npx --yes wrangler@latest d1 create "$D1_NAME" --location enam
+            databases=$(npx --yes wrangler@latest d1 list --json)
+            database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
           fi
 
-          echo >> cloudflare-audit-report.md
-          if [ "$failed" -eq 0 ]; then
-            echo "**Resultado: PASS — acesso programatico pronto.**" >> cloudflare-audit-report.md
-          else
-            echo "**Resultado: FAIL — nenhuma alteracao foi feita na Cloudflare.**" >> cloudflare-audit-report.md
-          fi
-          echo "failed=$failed" >> "$GITHUB_OUTPUT"
-          exit 0
+          test -n "$database_id" && test "$database_id" != "null"
+          echo "database_id=$database_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: D1 id ${database_id}"
 
-      - name: Publicar status legivel por API
-        if: always()
+      - name: Aplicar schema no D1 remoto
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@latest d1 execute "$D1_NAME" --remote --file=./migrations/0001_leads.sql
+
+      - name: Validar schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=$(npx --yes wrangler@latest d1 execute "$D1_NAME" --remote \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('leads','system_events') ORDER BY name;" --json)
+          leads_ok=$(jq -r '[.[].results[]?.name] | index("leads") != null' <<<"$result")
+          events_ok=$(jq -r '[.[].results[]?.name] | index("system_events") != null' <<<"$result")
+          test "$leads_ok" = "true" && test "$events_ok" = "true"
+          echo "PASS: leads + system_events"
+
+      - name: Registrar D1 no PR
+        if: success()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DATABASE_ID: ${{ steps.db.outputs.database_id }}
         run: |
-          if [ "${{ steps.audit.outputs.failed }}" = "0" ]; then
-            state=success
-            description="Cloudflare API audit PASS"
-          else
-            state=failure
-            description="Cloudflare API audit FAIL"
-          fi
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-            -f state="$state" \
-            -f context="cloudflare/api-audit" \
-            -f description="$description"
+          body="### D1 criado e validado
 
-      - name: Registrar resultado no PR de infraestrutura
-        if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          body=$(cat cloudflare-audit-report.md)
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/issues/14/comments" \
-            -f body="$body"
+✅ \`${D1_NAME}\` pronto.
+✅ Tabelas \`leads\` e \`system_events\` prontas.
+✅ Database ID: \`${DATABASE_ID}\`.
 
-      - name: Encerrar com estado da auditoria
-        if: steps.audit.outputs.failed == '1'
-        shell: bash
-        run: exit 1
+A próxima automação vai vincular o banco ao Worker e testar a API de cadastro no preview."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
