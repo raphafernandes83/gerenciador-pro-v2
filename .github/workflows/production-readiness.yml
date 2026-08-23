@@ -1,0 +1,166 @@
+name: Production readiness
+
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: 'URL de produção final (opcional até o domínio existir)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-readiness
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar contrato de código e assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in wrangler.jsonc _headers .assetsignore src/worker.js src/worker-entry.js src/lots.js migrations/0001_leads.sql migrations/0002_registration_lots.sql scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs; do
+            test -s "$f" || { echo "arquivo ausente: $f"; exit 1; }
+          done
+          grep -F 'scripts' .assetsignore >/dev/null
+          grep -F 'migrations' .assetsignore >/dev/null
+          grep -F '.github' .assetsignore >/dev/null
+          grep -F 'Content-Security-Policy' _headers >/dev/null
+          grep -F 'REGISTRATION_CONTACT_LIMITER' wrangler.jsonc >/dev/null
+          grep -F 'REGISTRATION_IP_LIMITER' wrangler.jsonc >/dev/null
+          grep -F 'SHEET_RETRY_QUEUE' wrangler.jsonc >/dev/null
+          grep -F 'DB' wrangler.jsonc >/dev/null
+          if grep -Eq '^  push:|^    branches:.*main' .github/workflows/pages.yml; then
+            echo 'FAIL: GitHub Pages não pode auto-publicar main'
+            exit 1
+          fi
+          echo 'PASS: contrato de código e assets'
+
+      - name: Validar preview e segurança publicada
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS --max-time 10 -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            headers=$(curl -sSI --max-time 10 "${PREVIEW_URL}/" || true)
+            if [ "$code" = '200' ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null 2>&1 \
+              && grep -qi '^content-security-policy:' <<<"$headers" \
+              && grep -qi '^strict-transport-security:' <<<"$headers"; then
+              break
+            fi
+            sleep 3
+          done
+          test "$code" = '200'
+          jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null
+          for path in '/.git/config' '/.github/workflows/pages.yml' '/src/worker.js' '/scripts/reconcile-sheets.mjs' '/migrations/0001_leads.sql' '/wrangler.jsonc'; do
+            status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "${PREVIEW_URL}${path}")
+            test "$status" = '404'
+          done
+          echo 'PASS: preview seguro e arquivos internos inacessíveis'
+
+      - name: Validar higiene do D1 sem ler PII
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          sql="SELECT COUNT(*) AS total, SUM(CASE WHEN sheet_sync_status='retry' THEN 1 ELSE 0 END) AS retry, SUM(CASE WHEN sheet_sync_status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN origem IN ('rate-limit-smoke','load-drill','ci-lot-concurrency','worker-lot-smoke') OR submission_id LIKE 'qa-%' OR submission_id LIKE 'rate-smoke-%' OR submission_id LIKE 'load-%' THEN 1 ELSE 0 END) AS qa_leftovers FROM leads"
+          body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          row=$(jq -c '.result[0].results[0]' <<<"$response")
+          retry=$(jq -r '.retry // 0' <<<"$row")
+          failed=$(jq -r '.failed // 0' <<<"$row")
+          qa=$(jq -r '.qa_leftovers // 0' <<<"$row")
+          test "$failed" -eq 0
+          test "$qa" -eq 0
+          echo "retry=$retry" >> "$GITHUB_OUTPUT"
+          echo 'PASS: sem failed e sem resíduos QA'
+
+      - name: Verificar publicação do Apps Script seguro
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          secure=false
+          response=$(curl -sS --max-time 15 "$SHEETS_MIRROR_URL" || true)
+          if jq -e '.ok == true and .version == "2026-08-23.2" and .status == "ready"' <<<"$response" >/dev/null 2>&1 \
+            && ! jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' <<<"$response" >/dev/null 2>&1; then
+            secure=true
+          fi
+          echo "secure=$secure" >> "$GITHUB_OUTPUT"
+          echo "Apps Script seguro publicado=${secure}"
+
+      - name: Verificar proteção de branches
+        id: branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          main=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected')
+          production=$(gh api "repos/${GITHUB_REPOSITORY}/branches/production" --jq '.protected')
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "production=$production" >> "$GITHUB_OUTPUT"
+          echo "main protected=${main}; production protected=${production}"
+
+      - name: Verificar domínio final e Turnstile real quando informado
+        id: prod
+        shell: bash
+        env:
+          PRODUCTION_URL: ${{ inputs.production_url }}
+        run: |
+          set -euo pipefail
+          ready=false
+          if [ -n "${PRODUCTION_URL:-}" ]; then
+            base="${PRODUCTION_URL%/}"
+            if [[ "$base" == https://* ]]; then
+              payload='{"tipo_interesse":"comprar","nome":"READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+              code=$(curl -sS --max-time 15 -o /tmp/prod.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$payload" || true)
+              if [ "$code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod.json >/dev/null 2>&1; then ready=true; fi
+            fi
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "domínio + Turnstile real=${ready}"
+
+      - name: GO NO-GO
+        shell: bash
+        env:
+          APPS: ${{ steps.apps.outputs.secure }}
+          MAIN_PROTECTED: ${{ steps.branches.outputs.main }}
+          PROD_PROTECTED: ${{ steps.branches.outputs.production }}
+          PROD_READY: ${{ steps.prod.outputs.ready }}
+          RETRY: ${{ steps.d1.outputs.retry }}
+        run: |
+          set -euo pipefail
+          manual_ready=false
+          if [ "$APPS" = true ] && [ "$MAIN_PROTECTED" = true ] && [ "$PROD_PROTECTED" = true ] && [ "$PROD_READY" = true ]; then manual_ready=true; fi
+          {
+            echo '## Production readiness — Gerenciador PRO'
+            echo ''
+            echo '| Gate | Estado |'
+            echo '|---|---|'
+            echo '| Infra/preview automático | ✅ PASS |'
+            echo "| D1 retries atuais | ${RETRY} |"
+            if [ "$APPS" = true ]; then echo '| Apps Script seguro publicado | ✅ |'; else echo '| Apps Script seguro publicado | ⏳ |'; fi
+            if [ "$MAIN_PROTECTED" = true ]; then echo '| main protegida | ✅ |'; else echo '| main protegida | ⏳ |'; fi
+            if [ "$PROD_PROTECTED" = true ]; then echo '| production protegida | ✅ |'; else echo '| production protegida | ⏳ |'; fi
+            if [ "$PROD_READY" = true ]; then echo '| Domínio + Turnstile real | ✅ |'; else echo '| Domínio + Turnstile real | ⏳ |'; fi
+            echo ''
+            if [ "$manual_ready" = true ]; then echo '**GO técnico — pronto para workflow de promoção.**'; else echo '**NO-GO controlado — infraestrutura automática pronta; gates manuais ainda pendentes.**'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "manual_ready=${manual_ready}"
