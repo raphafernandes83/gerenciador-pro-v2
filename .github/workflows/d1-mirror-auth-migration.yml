@@ -1,0 +1,87 @@
+name: D1 mirror auth migration
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/d1-mirror-auth-migration.yml"
+      - "migrations/0003_mirror_auth_token.sql"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/d1-mirror-auth-migration.yml"
+      - "migrations/0003_mirror_auth_token.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d1-schema-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+    steps:
+      - name: Aplicar coluna somente se ausente
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          query() {
+            local sql="$1"
+            local body
+            body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body"
+          }
+
+          schema=$(query "SELECT COUNT(*) AS n FROM pragma_table_info('leads') WHERE name='mirror_auth_token'")
+          present=$(jq -r '.result[0].results[0].n // 0' <<<"$schema")
+          if [ "$present" -eq 0 ]; then
+            response=$(query "ALTER TABLE leads ADD COLUMN mirror_auth_token TEXT")
+            test "$(jq -r '.success // false' <<<"$response")" = true
+            echo 'PASS: mirror_auth_token adicionado'
+          else
+            echo 'PASS: mirror_auth_token já existe'
+          fi
+
+      - name: Backfill seguro de estados pendentes
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="UPDATE leads SET mirror_auth_token=lower(hex(randomblob(32))) WHERE sheet_sync_status IN ('pending','retry') AND COALESCE(mirror_auth_token,'')=''"
+          body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+
+          sql="UPDATE leads SET mirror_auth_token=NULL WHERE sheet_sync_status='synced' AND mirror_auth_token IS NOT NULL"
+          body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+          echo 'PASS: tokens compatibilizados com estado de sync'
+
+      - name: Verificar invariantes sem ler PII
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="SELECT (SELECT COUNT(*) FROM pragma_table_info('leads') WHERE name='mirror_auth_token') AS column_ok, SUM(CASE WHEN sheet_sync_status IN ('pending','retry') AND COALESCE(mirror_auth_token,'')='' THEN 1 ELSE 0 END) AS missing_active_token, SUM(CASE WHEN sheet_sync_status='synced' AND mirror_auth_token IS NOT NULL THEN 1 ELSE 0 END) AS synced_with_token FROM leads"
+          body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          row=$(jq -c '.result[0].results[0]' <<<"$response")
+          test "$(jq -r '.column_ok // 0' <<<"$row")" -eq 1
+          test "$(jq -r '.missing_active_token // 0' <<<"$row")" -eq 0
+          test "$(jq -r '.synced_with_token // 0' <<<"$row")" -eq 0
+          echo 'PASS: mirror auth token invariants'
