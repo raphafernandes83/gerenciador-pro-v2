@@ -34,15 +34,17 @@ jobs:
         run: |
           set -euo pipefail
           file=scripts/apps-script/Code.secure.gs
-          grep -F 'MIRROR_AUTH_URL' "$file" >/dev/null
+          grep -F 'MIRROR_AUTH_PROPERTY_KEY: "GP_MIRROR_AUTH_URL"' "$file" >/dev/null
           grep -F 'VERSION: "2026-08-23.3"' "$file" >/dev/null
           grep -F '_mirror_auth_token' "$file" >/dev/null
+          grep -F 'getMirrorAuthUrl_' "$file" >/dev/null
           grep -F 'authorizeMirrorPayload_' "$file" >/dev/null
           grep -F 'findSubmissionId_' "$file" >/dev/null
           grep -F 'OFFICIAL_SPREADSHEET_UNAVAILABLE' "$file" >/dev/null
-          grep -F 'status: "ready"' "$file" >/dev/null
+          grep -F 'status: ready ? "ready" : "not_ready"' "$file" >/dev/null
+          ! grep -F 'animaisfofinhos1983.workers.dev/api/mirror/authorize' "$file" >/dev/null
           ! grep -F 'postMessage(' "$file" >/dev/null
           ! grep -F 'HtmlService' "$file" >/dev/null
           ! grep -F 'spreadsheetUrl:' "$file" >/dev/null
           ! grep -F 'spreadsheetId:' "$file" >/dev/null
-          echo "PASS: Apps Script v3 exige capability token e não expõe dados internos"
+          echo "PASS: Apps Script v3 exige capability token, URL por ambiente e não expõe dados internos"
