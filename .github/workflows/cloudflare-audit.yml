@@ -1,0 +1,58 @@
+name: Cloudflare audit
+
+on:
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: gerenciador-pro-v2
+    steps:
+      - name: Validar secrets obrigatorios
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "CLOUDFLARE_API_TOKEN ausente"; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo "CLOUDFLARE_ACCOUNT_ID ausente"; exit 1; }
+
+      - name: Localizar Worker na Cloudflare
+        id: worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          success=$(jq -r '.success' <<<"$response")
+          test "$success" = "true" || { echo "Cloudflare API recusou a consulta de Workers"; jq -c '.errors' <<<"$response"; exit 1; }
+          tag=$(jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .tag' <<<"$response" | head -n1)
+          test -n "$tag" && test "$tag" != "null" || { echo "Worker ${WORKER_NAME} nao encontrado"; exit 1; }
+          echo "worker_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "OK: Worker encontrado"
+
+      - name: Auditar triggers do Workers Builds
+        shell: bash
+        env:
+          WORKER_TAG: ${{ steps.worker.outputs.worker_tag }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${WORKER_TAG}/triggers" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          success=$(jq -r '.success' <<<"$response")
+          test "$success" = "true" || { echo "Cloudflare API recusou a consulta de triggers"; jq -c '.errors' <<<"$response"; exit 1; }
+          count=$(jq '.result | length' <<<"$response")
+          test "$count" -ge 1 || { echo "Nenhum trigger encontrado"; exit 1; }
+          echo "OK: ${count} trigger(s) encontrado(s)"
+          jq -r '.result[] | "- " + (.trigger_name // "sem nome") + " | includes=" + ((.branch_includes // []) | join(",")) + " | excludes=" + ((.branch_excludes // []) | join(",")) + " | deploy=" + (.deploy_command // "")' <<<"$response"
