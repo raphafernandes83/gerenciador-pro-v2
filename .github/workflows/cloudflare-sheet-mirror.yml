@@ -1,0 +1,117 @@
+name: Cloudflare Sheets mirror
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-sheet-mirror.yml"
+      - "src/worker.js"
+      - "wrangler.jsonc"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-sheet-mirror.yml"
+      - "src/worker.js"
+      - "wrangler.jsonc"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar preview com espelho configurado
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 48); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            if [ "$code" = "200" ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true' /tmp/health.json >/dev/null 2>&1; then
+              echo "PASS: preview com D1 + Sheets mirror configurado"
+              exit 0
+            fi
+            echo "Aguardando preview (${attempt}/48)"
+            sleep 5
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Gravar cadastro sintetico no D1
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="sheet-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload=$(jq -n \
+            --arg submission_id "$submission_id" \
+            '{
+              submission_id:$submission_id,
+              tipo_interesse:"comprar",
+              nome:"TESTE CHATGPT — PODE APAGAR",
+              whatsapp:"+5521900000000",
+              email:"teste.gerenciador.pro.20260819@example.com",
+              pais:"Brazil",
+              consentimento:"Sim",
+              origem:"ci-sheet-mirror"
+            }')
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
+            -H "Content-Type: application/json" --data "$payload")
+          jq -e --arg id "$submission_id" \
+            '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: D1 confirmou cadastro"
+
+      - name: Confirmar espelho no Sheets pelo status do D1
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          for attempt in $(seq 1 20); do
+            payload=$(jq -n --arg id "$SUBMISSION_ID" \
+              '{sql:"SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" --data "$payload")
+            status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
+            attempts=$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")
+            echo "Tentativa ${attempt}: status=${status}, attempts=${attempts}"
+            if [ "$status" = "synced" ] && [ "$attempts" -ge 1 ]; then
+              echo "PASS: D1 -> Apps Script -> Google Sheets confirmado"
+              exit 0
+            fi
+            if [ "$status" = "retry" ]; then
+              echo "FAIL: Sheets mirror retornou retry"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "FAIL: espelho nao confirmou a tempo"
+          exit 1
+
+      - name: Limpar somente o cadastro sintetico do D1
+        if: always() && steps.register.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          payload=$(jq -n --arg id "$SUBMISSION_ID" \
+            '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" --data "$payload")
+          jq -e '.success == true' <<<"$response" >/dev/null
+          echo "PASS: cadastro sintetico removido do D1"
