@@ -1,10 +1,7 @@
 name: Queue stale QA drain
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/queue-stale-drain.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
