@@ -1,9 +1,22 @@
 {
   "name": "gerenciador-pro-v2",
+  "main": "src/worker.js",
   "compatibility_date": "2026-08-23",
   "workers_dev": true,
   "preview_urls": true,
   "assets": {
-    "directory": "."
-  }
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gerenciador-pro-leads",
+      "database_id": "9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4",
+      "migrations_dir": "migrations"
+    }
+  ]
 }
