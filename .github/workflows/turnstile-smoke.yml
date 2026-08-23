@@ -1,0 +1,62 @@
+name: Turnstile smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/turnstile-smoke.yml"
+      - "src/worker-entry.js"
+      - "config.js"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/turnstile-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar preview com Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -o /tmp/config.js -w '%{http_code}' "${PREVIEW_URL}/config.js" || true)
+            if [ "$code" = "200" ] && grep -F 'turnstileSitekey' /tmp/config.js >/dev/null; then exit 0; fi
+            sleep 3
+          done
+          exit 1
+
+      - name: Sem token deve bloquear
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000001","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot"}'
+          code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "turnstile_required"' /tmp/missing.json >/dev/null
+
+      - name: Token invalido deve bloquear
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"INVALID-TOKEN"}'
+          code=$(curl -sS -o /tmp/invalid.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "turnstile_invalid"' /tmp/invalid.json >/dev/null
+
+      - name: Token oficial de teste deve passar
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000003","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          jq -e '.ok == true and .ignored == true' <<<"$response" >/dev/null
+          echo "PASS: Turnstile server-side fail-closed no preview"
