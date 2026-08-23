@@ -6,7 +6,7 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "infra/cloudflare-foundation"]
     paths:
       - ".github/workflows/d1-sheets-reconcile.yml"
       - "scripts/reconcile-sheets.mjs"
