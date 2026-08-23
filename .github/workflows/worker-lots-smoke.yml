@@ -56,7 +56,6 @@ jobs:
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-
           for sql in \
             "DELETE FROM system_events WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
             "DELETE FROM lead_lot_allocations WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
@@ -65,10 +64,8 @@ jobs:
             response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
             test "$(jq -r '.success // false' <<<"$response")" = "true"
           done
-
           body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
           curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
-
           sql="INSERT INTO registration_lots (market_key,lot_number,label,capacity,claimed_count,price_minor,currency_code,state,display_order,opened_at) VALUES (?,1,'CI WORKER LOT',2,0,7900,'BRL','open',1,strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
           body=$(jq -nc --arg sql "$sql" --arg market "$MARKET" '{sql:$sql,params:[$market]}')
           response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
@@ -105,9 +102,17 @@ jobs:
           MARKET: ci-worker-lot-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          response=$(curl --fail-with-body -sS "${PREVIEW_URL}/api/lots?market=${MARKET}")
-          jq -e '.ok == true and .current.remaining == 1 and .current.claimed == 1' <<<"$response" >/dev/null
-          echo "PASS: contador = 1"
+          for attempt in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/lots-after.json -w '%{http_code}' "${PREVIEW_URL}/api/lots?market=${MARKET}" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .current.remaining == 1 and .current.claimed == 1' /tmp/lots-after.json >/dev/null 2>&1; then
+              echo "PASS: contador = 1"
+              exit 0
+            fi
+            echo "Aguardando endpoint estabilizar (${attempt}/30, HTTP ${code})"
+            sleep 2
+          done
+          cat /tmp/lots-after.json 2>/dev/null || true
+          exit 1
 
       - name: Aguardar espelho reconhecer contato existente
         if: steps.register.outputs.submission_id != ''
