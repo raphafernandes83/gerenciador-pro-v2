@@ -1,0 +1,182 @@
+name: D1 lots concurrency
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/d1-lots-concurrency.yml"
+      - "migrations/0002_registration_lots.sql"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/d1-lots-concurrency.yml"
+      - "migrations/0002_registration_lots.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  lots:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar config D1 isolada
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/wrangler-d1-lots.jsonc <<'JSON'
+          {
+            "name": "gp-d1-lots-migrate",
+            "compatibility_date": "2026-08-23",
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "gerenciador-pro-leads",
+                "database_id": "9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4"
+              }
+            ]
+          }
+          JSON
+
+      - name: Aplicar migration de lotes
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@latest d1 execute DB --remote \
+            --config /tmp/wrangler-d1-lots.jsonc \
+            --file=./migrations/0002_registration_lots.sql
+          echo "PASS: migration 0002 aplicada"
+
+      - name: Validar tabelas e triggers
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=$(npx --yes wrangler@latest d1 execute DB --remote \
+            --config /tmp/wrangler-d1-lots.jsonc \
+            --command="SELECT type,name FROM sqlite_master WHERE name IN ('registration_lots','lead_lot_allocations','trg_lot_allocation_guard','trg_lot_allocation_claim') ORDER BY name;" \
+            --json)
+          names=$(jq -r '[.[].results[]?.name] | unique | sort' <<<"$result")
+          for expected in registration_lots lead_lot_allocations trg_lot_allocation_guard trg_lot_allocation_claim; do
+            jq -e --arg name "$expected" 'index($name) != null' <<<"$names" >/dev/null
+          done
+          echo "PASS: tabelas + triggers presentes"
+
+      - name: Preparar lote CI com 2 vagas e 50 leads
+        shell: bash
+        env:
+          RUN_KEY: ci-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/lots-fixture.sql <<SQL
+          DELETE FROM lead_lot_allocations WHERE submission_id LIKE '${RUN_KEY}-%';
+          DELETE FROM leads WHERE submission_id LIKE '${RUN_KEY}-%';
+          DELETE FROM registration_lots WHERE market_key = '${RUN_KEY}';
+          INSERT INTO registration_lots
+            (market_key, lot_number, label, capacity, claimed_count, price_minor, currency_code, state, display_order, opened_at)
+          VALUES
+            ('${RUN_KEY}', 1, 'CI — 2 vagas', 2, 0, 7900, 'BRL', 'open', 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+          SQL
+          for i in $(seq 1 50); do
+            cat >> /tmp/lots-fixture.sql <<SQL
+          INSERT INTO leads
+            (submission_id, tipo_interesse, nome, whatsapp, whatsapp_norm, pais, consentimento, origem, payload_json)
+          VALUES
+            ('${RUN_KEY}-${i}', 'comprar', 'LOT CONCURRENCY TEST ${i}', '+550000${i}', '550000${i}', 'Brazil', 1, 'ci-lot-concurrency', '{}');
+          SQL
+          done
+          npx --yes wrangler@latest d1 execute DB --remote \
+            --config /tmp/wrangler-d1-lots.jsonc \
+            --file=/tmp/lots-fixture.sql
+          echo "PASS: fixture criada"
+
+      - name: Disparar 50 tentativas concorrentes para 2 vagas
+        shell: bash
+        env:
+          RUN_KEY: ci-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          mkdir -p /tmp/lot-responses
+
+          allocate_one() {
+            local i="$1"
+            local submission="${RUN_KEY}-${i}"
+            local sql='INSERT INTO lead_lot_allocations (submission_id, lot_id, price_minor_snapshot, currency_code_snapshot) SELECT ?, id, price_minor, currency_code FROM registration_lots WHERE market_key = ? AND lot_number = 1 AND state = '\''open'\'' AND claimed_count < capacity LIMIT 1'
+            local body
+            body=$(jq -nc --arg sql "$sql" --arg sub "$submission" --arg market "$RUN_KEY" '{sql:$sql,params:[$sub,$market]}')
+            curl --fail-with-body -sS -X POST "$api" \
+              -H "$auth" \
+              -H "Content-Type: application/json" \
+              --data "$body" > "/tmp/lot-responses/${i}.json"
+          }
+          export -f allocate_one
+          export api auth RUN_KEY
+
+          seq 1 50 | xargs -n1 -P50 -I{} bash -c 'allocate_one "$1"' _ {}
+
+          failures=0
+          for f in /tmp/lot-responses/*.json; do
+            if [ "$(jq -r '.success // false' "$f")" != "true" ]; then
+              failures=$((failures+1))
+            fi
+          done
+          test "$failures" -eq 0
+          echo "PASS: 50 requests concorrentes processadas"
+
+      - name: Provar que somente 2 vagas foram alocadas
+        shell: bash
+        env:
+          RUN_KEY: ci-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="SELECT l.capacity,l.claimed_count,l.state,COUNT(a.id) AS allocations FROM registration_lots l LEFT JOIN lead_lot_allocations a ON a.lot_id=l.id WHERE l.market_key=? GROUP BY l.id"
+          body=$(jq -nc --arg sql "$sql" --arg market "$RUN_KEY" '{sql:$sql,params:[$market]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+          jq -e '.success == true and .result[0].results[0].capacity == 2 and .result[0].results[0].claimed_count == 2 and .result[0].results[0].allocations == 2 and .result[0].results[0].state == "closed"' <<<"$response" >/dev/null
+          echo "PASS: 50 concorrentes -> exatamente 2 alocacoes; lote fechado sem oversell"
+
+      - name: Limpar fixture de concorrencia
+        if: always()
+        shell: bash
+        env:
+          RUN_KEY: ci-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in \
+            "DELETE FROM lead_lot_allocations WHERE submission_id LIKE ?" \
+            "DELETE FROM leads WHERE submission_id LIKE ?" \
+            "DELETE FROM registration_lots WHERE market_key = ?"; do
+            if [[ "$sql" == *LIKE* ]]; then
+              param="${RUN_KEY}-%"
+            else
+              param="$RUN_KEY"
+            fi
+            body=$(jq -nc --arg sql "$sql" --arg param "$param" '{sql:$sql,params:[$param]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+            test "$(jq -r '.success // false' <<<"$response")" = "true"
+          done
+          echo "PASS: fixture removida"
+
+      - name: Registrar resultado no PR
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" \
+            -f body='### D1 lot concurrency\n\n✅ Migration `0002_registration_lots.sql` aplicada.\n✅ Tabelas e triggers validados.\n✅ Teste: **50 tentativas concorrentes para 2 vagas**.\n✅ Resultado: exatamente **2 alocações**, `claimed_count=2`, lote `closed`.\n✅ Fixture de teste removida.\n\n**PASS — sem oversell no teste de concorrência.**'
