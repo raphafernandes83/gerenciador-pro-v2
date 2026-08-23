@@ -55,7 +55,125 @@ async function findDuplicate(env, interest, phone, email) {
   ).bind(interest, ...args).first();
 }
 
-async function register(request, env) {
+function buildSheetPayload(record, payload) {
+  return {
+    submission_id: record.submission_id,
+    tipo_interesse: record.tipo_interesse,
+    nome: record.nome,
+    whatsapp: record.whatsapp,
+    email: record.email || "",
+    pais: record.pais,
+    cidade_estado: clean(payload.cidade_estado, 500),
+    contato_preferido: clean(payload.contato_preferido, 500),
+    experiencia_trading: clean(payload.experiencia_trading, 500),
+    principal_objetivo: clean(payload.principal_objetivo, 1000),
+    canal_divulgacao: record.canal_divulgacao || "",
+    tamanho_publico: clean(payload.tamanho_publico, 500),
+    link_canal: record.link_canal || "",
+    experiencia_afiliado: clean(payload.experiencia_afiliado, 1000),
+    observacao: record.observacao || "",
+    consentimento: "Sim",
+    origem: record.origem || "",
+    utm_source: record.utm_source || "",
+    utm_medium: record.utm_medium || "",
+    utm_campaign: record.utm_campaign || "",
+    pagina_url: record.pagina_url || "",
+    enviado_em_local: record.enviado_em_local || "",
+    user_agent: record.user_agent || ""
+  };
+}
+
+async function recordSystemEvent(env, eventType, submissionId, details = {}) {
+  try {
+    await env.DB.prepare(
+      "INSERT INTO system_events (event_type, submission_id, details_json) VALUES (?, ?, ?)"
+    ).bind(eventType, submissionId || null, JSON.stringify(details)).run();
+  } catch (error) {
+    console.error("system_event_failed", eventType, error);
+  }
+}
+
+async function markSheetSynced(env, submissionId, details = {}) {
+  await env.DB.prepare(
+    `UPDATE leads
+     SET sheet_sync_status = 'synced',
+         sheet_sync_attempts = sheet_sync_attempts + 1,
+         sheet_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE submission_id = ?`
+  ).bind(submissionId).run();
+
+  await recordSystemEvent(env, "sheet_sync_succeeded", submissionId, details);
+}
+
+async function markSheetRetry(env, submissionId, reason, details = {}) {
+  try {
+    await env.DB.prepare(
+      `UPDATE leads
+       SET sheet_sync_status = 'retry',
+           sheet_sync_attempts = sheet_sync_attempts + 1,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE submission_id = ?`
+    ).bind(submissionId).run();
+  } finally {
+    await recordSystemEvent(env, "sheet_sync_retry", submissionId, {
+      reason,
+      ...details
+    });
+  }
+}
+
+async function syncLeadToSheet(env, record, payload) {
+  const endpoint = clean(env.SHEETS_MIRROR_URL, 2000);
+  if (!endpoint) {
+    await markSheetRetry(env, record.submission_id, "mirror_not_configured");
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "accept": "application/json"
+      },
+      body: JSON.stringify(buildSheetPayload(record, payload)),
+      redirect: "follow",
+      signal: controller.signal
+    });
+
+    const raw = await response.text();
+    let result;
+    try {
+      result = JSON.parse(raw);
+    } catch {
+      throw new Error(`invalid_sheet_response:${response.status}`);
+    }
+
+    if (!response.ok || result?.ok !== true) {
+      throw new Error(clean(result?.error || `sheet_http_${response.status}`, 500));
+    }
+
+    await markSheetSynced(env, record.submission_id, {
+      duplicate: Boolean(result.duplicate),
+      sheetName: clean(result.sheetName, 200) || null
+    });
+  } catch (error) {
+    const reason = error?.name === "AbortError"
+      ? "sheet_timeout"
+      : clean(error?.message || error, 500) || "sheet_unknown_error";
+
+    console.error("sheet_sync_failed", record.submission_id, reason);
+    await markSheetRetry(env, record.submission_id, reason);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function register(request, env, ctx) {
   let payload;
   try {
     payload = await readPayload(request);
@@ -76,6 +194,7 @@ async function register(request, env) {
   const emailNorm = normalizeEmail(email);
   const pais = clean(payload.pais, 120);
   const consent = truthyConsent(payload.consentimento);
+  const canalDivulgacao = clean(payload.canal_divulgacao, 180);
 
   if (!submissionId || !["comprar", "revender"].includes(interest)) {
     return json({ ok: false, error: "invalid_interest" }, 422);
@@ -87,6 +206,9 @@ async function register(request, env) {
   if (!validEmail(emailNorm)) return json({ ok: false, error: "invalid_email" }, 422);
   if (!pais) return json({ ok: false, error: "invalid_country" }, 422);
   if (!consent) return json({ ok: false, error: "consent_required" }, 422);
+  if (interest === "revender" && !canalDivulgacao) {
+    return json({ ok: false, error: "channel_required" }, 422);
+  }
 
   const existingSubmission = await env.DB.prepare(
     "SELECT submission_id FROM leads WHERE submission_id = ? LIMIT 1"
@@ -111,7 +233,7 @@ async function register(request, env) {
     email_norm: emailNorm,
     pais,
     consentimento: 1,
-    canal_divulgacao: clean(payload.canal_divulgacao, 180) || null,
+    canal_divulgacao: canalDivulgacao || null,
     link_canal: clean(payload.link_canal, 1000) || null,
     observacao: clean(payload.observacao, 5000) || null,
     origem: clean(payload.origem, 500) || null,
@@ -120,7 +242,7 @@ async function register(request, env) {
     utm_campaign: clean(payload.utm_campaign, 500) || null,
     pagina_url: clean(payload.pagina_url, 2000) || null,
     user_agent: clean(payload.user_agent, 1000) || null,
-    enviado_em_local: clean(payload.enviado_em_local, 100) || null,
+    enviado_em_local: clean(payload.enviado_em_local, 100) || null
   };
 
   try {
@@ -155,6 +277,14 @@ async function register(request, env) {
     ).run();
 
     if (!result.success) throw new Error("d1_insert_failed");
+
+    const mirrorPromise = syncLeadToSheet(env, record, payload);
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(mirrorPromise);
+    } else {
+      mirrorPromise.catch((error) => console.error("sheet_sync_unhandled", error));
+    }
+
     return json({ ok: true, duplicate: false, submissionId });
   } catch (error) {
     const duplicateAfterRace = await findDuplicate(env, interest, whatsappNorm, emailNorm);
@@ -170,14 +300,18 @@ async function register(request, env) {
 async function health(env) {
   try {
     const row = await env.DB.prepare("SELECT 1 AS ok").first();
-    return json({ ok: row?.ok === 1, database: "reachable" });
+    return json({
+      ok: row?.ok === 1,
+      database: "reachable",
+      sheetMirrorConfigured: Boolean(clean(env.SHEETS_MIRROR_URL, 2000))
+    });
   } catch {
     return json({ ok: false, database: "unreachable" }, 503);
   }
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health" && request.method === "GET") {
@@ -185,7 +319,7 @@ export default {
     }
 
     if (url.pathname === "/api/register" && request.method === "POST") {
-      return register(request, env);
+      return register(request, env, ctx);
     }
 
     if (url.pathname.startsWith("/api/")) {
