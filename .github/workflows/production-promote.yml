@@ -65,12 +65,12 @@ jobs:
         run: |
           set -euo pipefail
           response=$(curl -sS --max-time 15 "$SHEETS_MIRROR_URL")
-          echo "$response" | jq -e '.ok == true and .version == "2026-08-23.2" and .status == "ready"' >/dev/null
+          echo "$response" | jq -e '.ok == true and .version == "2026-08-23.3" and .status == "ready"' >/dev/null
           if echo "$response" | jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' >/dev/null; then
             echo 'FAIL: Apps Script ainda expõe metadados da planilha'
             exit 1
           fi
-          echo 'PASS: Apps Script seguro publicado'
+          echo 'PASS: Apps Script seguro v3 publicado'
 
       - name: Promover SHA aprovado para production
         shell: bash
