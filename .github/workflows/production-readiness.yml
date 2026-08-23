@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in wrangler.jsonc _headers .assetsignore src/worker.js src/worker-entry.js src/lots.js migrations/0001_leads.sql migrations/0002_registration_lots.sql scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs; do
+          for f in wrangler.jsonc _headers .assetsignore src/worker.js src/worker-entry.js src/lots.js migrations/0001_leads.sql migrations/0002_registration_lots.sql scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs scripts/apps-script/appsscript.json; do
             test -s "$f" || { echo "arquivo ausente: $f"; exit 1; }
           done
           grep -F 'scripts' .assetsignore >/dev/null
@@ -48,6 +48,7 @@ jobs:
           grep -F 'REGISTRATION_IP_LIMITER' wrangler.jsonc >/dev/null
           grep -F 'SHEET_RETRY_QUEUE' wrangler.jsonc >/dev/null
           grep -F 'DB' wrangler.jsonc >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null' scripts/apps-script/appsscript.json >/dev/null
           if grep -Eq '^  push:|^    branches:.*main' .github/workflows/pages.yml; then
             echo 'FAIL: GitHub Pages não pode auto-publicar main'
             exit 1
@@ -126,16 +127,20 @@ jobs:
           echo "consumer=${consumer_count}/${consumer_type}" >> "$GITHUB_OUTPUT"
           echo "Queue backlog=${retry_backlog}; DLQ=${dlq_backlog}; consumer=${consumer_count}/${consumer_type}"
 
-      - name: Verificar publicação do Apps Script seguro
+      - name: Verificar publicação e conectividade do Apps Script seguro
         id: apps
         shell: bash
         run: |
           set -euo pipefail
           secure=false
-          response=$(curl -sS --max-time 15 "$SHEETS_MIRROR_URL" || true)
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" || true)
           if jq -e '.ok == true and .version == "2026-08-23.3" and .status == "ready"' <<<"$response" >/dev/null 2>&1 \
             && ! jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' <<<"$response" >/dev/null 2>&1; then
-            secure=true
+            probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"readiness-nonexistent"}'
+            post=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+            if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$post" >/dev/null 2>&1; then
+              secure=true
+            fi
           fi
           echo "secure=$secure" >> "$GITHUB_OUTPUT"
 
@@ -195,7 +200,7 @@ jobs:
             echo "| D1 pending / retry / failed | ${PENDING} / ${RETRY} / ${FAILED} |"
             echo "| QA ativo (<10min) | ${QA_ACTIVE} |"
             echo "| Retry Queue / DLQ | ${QUEUE_BACKLOG} / ${DLQ_BACKLOG} |"
-            if [ "$APPS" = true ]; then echo '| Apps Script seguro publicado | ✅ |'; else echo '| Apps Script seguro publicado | ⏳ |'; fi
+            if [ "$APPS" = true ]; then echo '| Apps Script v3 + UrlFetchApp | ✅ |'; else echo '| Apps Script v3 + UrlFetchApp | ⏳ |'; fi
             if [ "$MAIN_PROTECTED" = true ]; then echo '| main protegida | ✅ |'; else echo '| main protegida | ⏳ |'; fi
             if [ "$PROD_PROTECTED" = true ]; then echo '| production protegida | ✅ |'; else echo '| production protegida | ⏳ |'; fi
             if [ "$PROD_READY" = true ]; then echo '| Domínio + Turnstile real | ✅ |'; else echo '| Domínio + Turnstile real | ⏳ |'; fi
