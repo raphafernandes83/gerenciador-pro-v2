@@ -29,5 +29,23 @@
         "queue": "gerenciador-pro-sheet-retry"
       }
     ]
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "REGISTRATION_CONTACT_LIMITER",
+      "namespace_id": "41001",
+      "simple": {
+        "limit": 6,
+        "period": 60
+      }
+    },
+    {
+      "name": "REGISTRATION_IP_LIMITER",
+      "namespace_id": "41002",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ]
 }
