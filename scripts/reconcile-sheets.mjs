@@ -32,6 +32,23 @@ async function query(sql, params = []) {
   return body.result?.[0]?.results || [];
 }
 
+async function execute(sql, params = []) {
+  const response = await fetch(api, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ sql, params })
+  });
+  const body = await response.json();
+  if (!response.ok || body?.success !== true) {
+    throw new Error(`d1_execute_failed:${response.status}`);
+  }
+  const result = body.result?.[0] || {};
+  return Number(result?.meta?.changes ?? result?.changes ?? 0);
+}
+
 function safeJson(value) {
   try {
     return value ? JSON.parse(value) : {};
@@ -90,6 +107,14 @@ async function mirror(row) {
   }
 }
 
+async function currentStatus(submissionId) {
+  const rows = await query(
+    "SELECT sheet_sync_status FROM leads WHERE submission_id=? LIMIT 1",
+    [submissionId]
+  );
+  return rows[0]?.sheet_sync_status || null;
+}
+
 const rows = await query(
   `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,link_canal,
           observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,
@@ -103,40 +128,60 @@ const rows = await query(
 
 let synced = 0;
 let failed = 0;
+let raceResolved = 0;
 
 for (const row of rows) {
   try {
     const result = await mirror(row);
-    await query(
+    const changed = await execute(
       `UPDATE leads
        SET sheet_sync_status='synced',
            sheet_sync_attempts=sheet_sync_attempts+1,
            sheet_synced_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
            updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-       WHERE submission_id=?`,
+       WHERE submission_id=?
+         AND COALESCE(sheet_sync_status,'pending') <> 'synced'`,
       [row.submission_id]
     );
     await query(
-      "INSERT INTO system_events (event_type,submission_id,details_json) VALUES ('sheet_reconciled',?,?)",
-      [row.submission_id, JSON.stringify({ duplicate: Boolean(result?.duplicate) })]
+      "INSERT INTO system_events (event_type,submission_id,details_json) VALUES (?,?,?) RETURNING id",
+      [changed > 0 ? "sheet_reconciled" : "sheet_reconcile_already_synced", row.submission_id, JSON.stringify({ duplicate: Boolean(result?.duplicate) })]
     );
-    synced += 1;
+    if (changed > 0) synced += 1;
+    else raceResolved += 1;
   } catch (error) {
-    await query(
+    const status = await currentStatus(row.submission_id).catch(() => null);
+    if (status === "synced") {
+      await query(
+        "INSERT INTO system_events (event_type,submission_id,details_json) VALUES ('sheet_reconcile_race_resolved',?,?) RETURNING id",
+        [row.submission_id, JSON.stringify({ error: String(error?.message || error).slice(0, 300) })]
+      );
+      raceResolved += 1;
+      continue;
+    }
+
+    const changed = await execute(
       `UPDATE leads
        SET sheet_sync_status='retry',
            sheet_sync_attempts=sheet_sync_attempts+1,
            updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-       WHERE submission_id=?`,
+       WHERE submission_id=?
+         AND COALESCE(sheet_sync_status,'pending') <> 'synced'`,
       [row.submission_id]
     );
+
+    if (changed === 0) {
+      raceResolved += 1;
+      continue;
+    }
+
     await query(
-      "INSERT INTO system_events (event_type,submission_id,details_json) VALUES ('sheet_reconcile_failed',?,?)",
+      "INSERT INTO system_events (event_type,submission_id,details_json) VALUES ('sheet_reconcile_failed',?,?) RETURNING id",
       [row.submission_id, JSON.stringify({ error: String(error?.message || error).slice(0, 300) })]
     );
     failed += 1;
   }
 }
 
-console.log(JSON.stringify({ checked: rows.length, synced, failed }));
+console.log(JSON.stringify({ checked: rows.length, synced, failed, raceResolved }));
 if (failed > 0 && process.env.FAIL_ON_RECONCILE_ERROR === "1") process.exit(1);
