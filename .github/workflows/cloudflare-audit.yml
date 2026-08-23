@@ -12,6 +12,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  statuses: write
 
 jobs:
   audit:
@@ -75,6 +76,26 @@ jobs:
           fi
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
           exit 0
+
+      - name: Publicar status legivel por API
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.audit.outputs.failed }}" = "0" ]; then
+            state=success
+            description="Cloudflare API audit PASS"
+          else
+            state=failure
+            description="Cloudflare API audit FAIL"
+          fi
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context="cloudflare/api-audit" \
+            -f description="$description"
 
       - name: Registrar resultado no PR de infraestrutura
         if: always()
