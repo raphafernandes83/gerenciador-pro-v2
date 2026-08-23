@@ -11,7 +11,7 @@ on:
       - "scripts/reconcile-sheets.mjs"
 
 concurrency:
-  group: gp-shared-sheets-test-contact
+  group: gp-sheets-retry-processing
   cancel-in-progress: false
 
 permissions:
@@ -55,7 +55,8 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
           sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
-          body=$(jq -nc --arg sql "$sql" --arg id "$id" '{sql:$sql,params:[$id,"comprar","TESTE CHATGPT — PODE APAGAR","+5521900000000","5521900000000","teste.gerenciador.pro.20260819@example.com","teste.gerenciador.pro.20260819@example.com","Brazil",1,"reconcile-smoke","{}"]}')
+          payload_json='{"tipo_interesse":"comprar","nome":"QA AUTOMÁTICO — NÃO É LEAD","whatsapp":"+5521999990073","email":"qa.sheets.anchor@example.invalid","pais":"Brazil","consentimento":"Sim","origem":"reconcile-smoke"}'
+          body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","QA AUTOMÁTICO — NÃO É LEAD","+5521999990073","5521999990073","qa.sheets.anchor@example.invalid","qa.sheets.anchor@example.invalid","Brazil",1,"reconcile-smoke",$payload]}')
           response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
           test "$(jq -r '.success // false' <<<"$response")" = true
 
