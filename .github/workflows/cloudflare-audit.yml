@@ -59,34 +59,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Criar ou localizar D1
+      - name: Localizar D1 pela API
         id: db
         shell: bash
         run: |
           set -euo pipefail
-          databases=$(npx --yes wrangler@latest d1 list --json)
-          database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
-          if [ -z "$database_id" ] || [ "$database_id" = "null" ]; then
-            echo "Criando D1 ${D1_NAME}..."
-            npx --yes wrangler@latest d1 create "$D1_NAME" --location enam
-            databases=$(npx --yes wrangler@latest d1 list --json)
-            database_id=$(jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' <<<"$databases" | head -n1)
-          fi
-          test -n "$database_id" && test "$database_id" != "null"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          response=$(curl --fail-with-body -sS "${api}/d1/database?name=${D1_NAME}&per_page=100" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          database_id=$(jq -r --arg name "$D1_NAME" '.result[]? | select(.name == $name) | .uuid' <<<"$response" | head -n1)
+          test -n "$database_id" && test "$database_id" != "null" || { echo "D1 ${D1_NAME} nao encontrado"; exit 1; }
           echo "database_id=$database_id" >> "$GITHUB_OUTPUT"
-          echo "PASS: D1 id ${database_id}"
+          echo "PASS: D1 localizado ${database_id}"
+
+      - name: Preparar config temporaria do D1
+        shell: bash
+        env:
+          DATABASE_ID: ${{ steps.db.outputs.database_id }}
+        run: |
+          jq -n --arg id "$DATABASE_ID" --arg name "$D1_NAME" '{
+            name: "gp-d1-migrate",
+            compatibility_date: "2026-08-23",
+            d1_databases: [{
+              binding: "DB",
+              database_name: $name,
+              database_id: $id
+            }]
+          }' > /tmp/wrangler-d1.jsonc
 
       - name: Aplicar schema no D1 remoto
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@latest d1 execute "$D1_NAME" --remote --file=./migrations/0001_leads.sql
+          npx --yes wrangler@latest d1 execute DB --remote --config /tmp/wrangler-d1.jsonc --file=./migrations/0001_leads.sql
 
       - name: Validar schema
         shell: bash
         run: |
           set -euo pipefail
-          result=$(npx --yes wrangler@latest d1 execute "$D1_NAME" --remote --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('leads','system_events') ORDER BY name;" --json)
+          result=$(npx --yes wrangler@latest d1 execute DB --remote --config /tmp/wrangler-d1.jsonc --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('leads','system_events') ORDER BY name;" --json)
           leads_ok=$(jq -r '[.[].results[]?.name] | index("leads") != null' <<<"$result")
           events_ok=$(jq -r '[.[].results[]?.name] | index("system_events") != null' <<<"$result")
           test "$leads_ok" = "true" && test "$events_ok" = "true"
