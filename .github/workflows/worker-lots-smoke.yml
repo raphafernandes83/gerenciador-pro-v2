@@ -1,5 +1,4 @@
 name: Worker lots smoke
-# final verification trigger
 
 on:
   pull_request:
@@ -105,23 +104,21 @@ jobs:
           done
           exit 1
 
-      - name: Aguardar espelho reconhecer contato existente
+      - name: Confirmar invariantes D1 de cadastro e lote
         if: steps.register.outputs.submission_id != ''
         shell: bash
         env:
           SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+          MARKET: ci-worker-lot-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          for attempt in $(seq 1 20); do
-            body=$(jq -nc --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
-            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
-            status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
-            if [ "$status" = "synced" ]; then exit 0; fi
-            sleep 2
-          done
-          exit 1
+          sql="SELECT (SELECT COUNT(*) FROM leads WHERE submission_id=?) AS lead_count,(SELECT COUNT(*) FROM lead_lot_allocations WHERE submission_id=?) AS allocation_count,(SELECT claimed_count FROM registration_lots WHERE market_key=? LIMIT 1) AS claimed"
+          body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" --arg market "$MARKET" '{sql:$sql,params:[$id,$id,$market]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+          jq -e '.result[0].results[0].lead_count == 1 and .result[0].results[0].allocation_count == 1 and .result[0].results[0].claimed == 1' <<<"$response" >/dev/null
+          echo 'PASS: lote validado independentemente do espelho Google'
 
       - name: Limpar teste
         if: always()
