@@ -1,0 +1,248 @@
+name: Preview load and resilience drill
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/load-resilience-drill.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: preview-load-resilience-drill
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      LIVE_D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Aguardar preview saudável
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            code=$(curl -sS --max-time 10 -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .database == "reachable" and .rateLimitConfigured == true' /tmp/health.json >/dev/null 2>&1; then
+              echo "PASS: preview saudável"
+              exit 0
+            fi
+            sleep 3
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Burst de 1000 healthchecks
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PREVIEW_URL
+          seq 1 1000 | xargs -P100 -I{} bash -c 'curl -sS --max-time 10 -o /dev/null -w "%{http_code}\n" "${PREVIEW_URL}/api/health"' > /tmp/health-codes.txt
+          test "$(wc -l < /tmp/health-codes.txt | tr -d ' ')" -eq 1000
+          test "$(grep -vc '^200$' /tmp/health-codes.txt || true)" -eq 0
+          echo "PASS: 1000/1000 healthchecks HTTP 200"
+
+      - name: Burst de 1000 leituras de lotes
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PREVIEW_URL
+          seq 1 1000 | xargs -P100 -I{} bash -c 'curl -sS --max-time 10 -o /dev/null -w "%{http_code}\n" "${PREVIEW_URL}/api/lots?market=LOAD_QA"' > /tmp/lots-codes.txt
+          test "$(wc -l < /tmp/lots-codes.txt | tr -d ' ')" -eq 1000
+          test "$(grep -vc '^200$' /tmp/lots-codes.txt || true)" -eq 0
+          echo "PASS: 1000/1000 leituras de lotes HTTP 200"
+
+      - name: Burst de 200 cross-origin deve falhar fechado
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"LOAD ORIGIN QA","whatsapp":"+5521999990000","pais":"Brazil","consentimento":"Sim"}'
+          export PREVIEW_URL payload
+          seq 1 200 | xargs -P50 -I{} bash -c 'curl -sS --max-time 10 -o /dev/null -w "%{http_code}\n" -X POST "${PREVIEW_URL}/api/register" -H "Origin: https://evil.example" -H "Content-Type: application/json" --data "$payload"' > /tmp/origin-codes.txt
+          test "$(wc -l < /tmp/origin-codes.txt | tr -d ' ')" -eq 200
+          test "$(grep -vc '^403$' /tmp/origin-codes.txt || true)" -eq 0
+          echo "PASS: 200/200 cross-origin bloqueados"
+
+      - name: Burst de 100 payloads grandes deve retornar 413
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          with open('/tmp/oversize.json','w',encoding='utf-8') as f:
+              json.dump({"padding":"x"*70000}, f)
+          PY
+          export PREVIEW_URL
+          seq 1 100 | xargs -P25 -I{} bash -c 'curl -sS --max-time 10 -o /dev/null -w "%{http_code}\n" -X POST "${PREVIEW_URL}/api/register" -H "Origin: ${PREVIEW_URL}" -H "Content-Type: application/json" --data-binary @/tmp/oversize.json' > /tmp/oversize-codes.txt
+          test "$(wc -l < /tmp/oversize-codes.txt | tr -d ' ')" -eq 100
+          test "$(grep -vc '^413$' /tmp/oversize-codes.txt || true)" -eq 0
+          echo "PASS: 100/100 payloads grandes bloqueados"
+
+      - name: Criar D1 descartável
+        id: tempdb
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database"
+          name="gp-load-qa-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          body=$(jq -nc --arg name "$name" '{name:$name}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          db_id=$(jq -r '.result.uuid // empty' <<<"$response")
+          test -n "$db_id"
+          echo "db_id=$db_id" >> "$GITHUB_OUTPUT"
+          cat > /tmp/wrangler-load.jsonc <<JSON
+          {"name":"gp-load-qa","compatibility_date":"2026-08-23","d1_databases":[{"binding":"DB","database_name":"${name}","database_id":"${db_id}"}]}
+          JSON
+          echo "PASS: D1 descartável criado"
+
+      - name: Aplicar schema no D1 descartável
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@latest d1 execute DB --remote --config /tmp/wrangler-load.jsonc --file=./migrations/0001_leads.sql
+          npx --yes wrangler@latest d1 execute DB --remote --config /tmp/wrangler-load.jsonc --file=./migrations/0002_registration_lots.sql
+          echo "PASS: migrations aplicadas"
+
+      - name: Preparar 500 leads e lote de 25 vagas
+        shell: bash
+        env:
+          RUN_KEY: load-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/load-fixture.sql <<SQL
+          INSERT INTO registration_lots (market_key,lot_number,label,capacity,claimed_count,price_minor,currency_code,state,display_order,opened_at)
+          VALUES ('${RUN_KEY}',1,'LOAD QA 25 vagas',25,0,7900,'BRL','open',1,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+          SQL
+          for i in $(seq 1 500); do
+            printf "INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,pais,consentimento,origem,payload_json) VALUES ('%s-%s','comprar','LOAD QA %s','+5500%s','5500%s','Brazil',1,'load-drill','{}');\n" "$RUN_KEY" "$i" "$i" "$i" "$i" >> /tmp/load-fixture.sql
+          done
+          npx --yes wrangler@latest d1 execute DB --remote --config /tmp/wrangler-load.jsonc --file=/tmp/load-fixture.sql
+          echo "PASS: 500 leads sintéticos preparados"
+
+      - name: Disparar 500 concorrentes para 25 vagas
+        shell: bash
+        env:
+          DB_ID: ${{ steps.tempdb.outputs.db_id }}
+          RUN_KEY: load-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DB_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          mkdir -p /tmp/load-responses
+          allocate_one() {
+            local i="$1" submission="${RUN_KEY}-${1}"
+            local sql='INSERT INTO lead_lot_allocations (submission_id,lot_id,price_minor_snapshot,currency_code_snapshot) SELECT ?,id,price_minor,currency_code FROM registration_lots WHERE market_key=? AND lot_number=1 AND state='\''open'\'' AND claimed_count<capacity LIMIT 1'
+            local body response
+            body=$(jq -nc --arg sql "$sql" --arg sub "$submission" --arg market "$RUN_KEY" '{sql:$sql,params:[$sub,$market]}')
+            for attempt in 1 2 3 4; do
+              response=$(curl -sS --max-time 20 -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" || true)
+              if [ "$(jq -r '.success // false' <<<"$response" 2>/dev/null || true)" = "true" ]; then
+                printf '%s' "$response" > "/tmp/load-responses/${i}.json"
+                return 0
+              fi
+              sleep "0.$((attempt*2))"
+            done
+            printf '%s' "$response" > "/tmp/load-responses/${i}.json"
+            return 1
+          }
+          export -f allocate_one
+          export api auth RUN_KEY
+          set +e
+          seq 1 500 | xargs -P100 -I{} bash -c 'allocate_one "$1"' _ {}
+          xargs_status=$?
+          set -e
+          failures=0
+          for f in /tmp/load-responses/*.json; do
+            if [ "$(jq -r '.success // false' "$f" 2>/dev/null || true)" != "true" ]; then failures=$((failures+1)); fi
+          done
+          test "$xargs_status" -eq 0
+          test "$failures" -eq 0
+          echo "PASS: 500 requests concorrentes processadas após retry controlado"
+
+      - name: Provar exatamente 25 alocações e zero oversell
+        shell: bash
+        env:
+          DB_ID: ${{ steps.tempdb.outputs.db_id }}
+          RUN_KEY: load-lot-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DB_ID}/query"
+          sql="SELECT l.capacity,l.claimed_count,l.state,COUNT(a.id) AS allocations FROM registration_lots l LEFT JOIN lead_lot_allocations a ON a.lot_id=l.id WHERE l.market_key=? GROUP BY l.id"
+          body=$(jq -nc --arg sql "$sql" --arg market "$RUN_KEY" '{sql:$sql,params:[$market]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          jq -e '.success == true and .result[0].results[0].capacity == 25 and .result[0].results[0].claimed_count == 25 and .result[0].results[0].allocations == 25 and .result[0].results[0].state == "closed"' <<<"$response" >/dev/null
+          echo "PASS: 500 concorrentes -> exatamente 25 vagas; zero oversell"
+
+      - name: Apagar D1 descartável
+        if: always() && steps.tempdb.outputs.db_id != ''
+        shell: bash
+        env:
+          DB_ID: ${{ steps.tempdb.outputs.db_id }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body -sS -X DELETE "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DB_ID}" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "PASS: D1 descartável removido"
+
+      - name: Preparar lead sintético pré-existente para rate limit
+        id: rateseed
+        shell: bash
+        run: |
+          set -euo pipefail
+          key="rate-qa-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          suffix="${GITHUB_RUN_ID: -8}"
+          phone="5521${suffix}"
+          email="${key}@example.invalid"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${LIVE_D1_DATABASE_ID}/query"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'synced')"
+          body=$(jq -nc --arg sql "$sql" --arg key "$key" --arg phone "$phone" --arg email "$email" '{sql:$sql,params:[$key,"comprar","RATE LIMIT QA",$phone,$phone,$email,$email,"Brazil",1,"rate-limit-drill","{}"]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "phone=$phone" >> "$GITHUB_OUTPUT"
+          echo "email=$email" >> "$GITHUB_OUTPUT"
+          echo "PASS: lead sintético pré-existente criado"
+
+      - name: Provar rate limit por contato
+        shell: bash
+        env:
+          KEY: ${{ steps.rateseed.outputs.key }}
+          PHONE: ${{ steps.rateseed.outputs.phone }}
+          EMAIL: ${{ steps.rateseed.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg key "$KEY" --arg phone "$PHONE" --arg email "$EMAIL" '{submission_id:$key,tipo_interesse:"comprar",nome:"RATE LIMIT QA",whatsapp:$phone,email:$email,pais:"Brazil",consentimento:"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}')
+          : > /tmp/rate-codes.txt
+          for i in $(seq 1 25); do
+            curl -sS --max-time 15 -o /dev/null -w '%{http_code}\n' -X POST "${PREVIEW_URL}/api/register" -H "Origin: ${PREVIEW_URL}" -H "Content-Type: application/json" --data "$payload" >> /tmp/rate-codes.txt
+          done
+          success=$(grep -c '^200$' /tmp/rate-codes.txt || true)
+          limited=$(grep -c '^429$' /tmp/rate-codes.txt || true)
+          other=$(grep -Evc '^(200|429)$' /tmp/rate-codes.txt || true)
+          test "$other" -eq 0
+          test "$success" -ge 1
+          test "$limited" -ge 1
+          echo "PASS: rate limiter atuou; 200=${success} 429=${limited}"
+
+      - name: Limpar lead sintético do rate limit
+        if: always() && steps.rateseed.outputs.key != ''
+        shell: bash
+        env:
+          KEY: ${{ steps.rateseed.outputs.key }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${LIVE_D1_DATABASE_ID}/query"
+          body=$(jq -nc --arg key "$KEY" '{sql:"DELETE FROM leads WHERE submission_id = ?",params:[$key]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "PASS: lead sintético removido"
