@@ -1,0 +1,140 @@
+name: TEMP Queue producer smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/queue-producer-smoke-TEMP.yml"
+      - "src/worker.js"
+      - "wrangler.jsonc"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/queue-producer-smoke-TEMP.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar preview com Queue binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            if [ "$code" = "200" ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true' /tmp/health.json >/dev/null 2>&1; then
+              echo "PASS: preview com Queue producer binding"
+              exit 0
+            fi
+            echo "Aguardando preview (${attempt}/60)"
+            sleep 5
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Forcar falha controlada do espelho
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="queue-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          phone="+55119${GITHUB_RUN_ID}"
+          payload=$(jq -n \
+            --arg submission_id "$submission_id" \
+            --arg whatsapp "$phone" \
+            '{
+              submission_id:$submission_id,
+              tipo_interesse:"comprar",
+              nome:"QUEUE SMOKE TEST",
+              whatsapp:$whatsapp,
+              email:"",
+              pais:"Brazil",
+              consentimento:"Sim",
+              origem:"ci-queue-smoke"
+            }')
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
+            -H "Content-Type: application/json" --data "$payload")
+          jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: usuario teria sucesso porque D1 confirmou"
+
+      - name: Confirmar retry e enqueue no D1
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for attempt in $(seq 1 30); do
+            sql="SELECT l.sheet_sync_status, l.sheet_sync_attempts, EXISTS(SELECT 1 FROM system_events e WHERE e.submission_id = l.submission_id AND e.event_type = 'sheet_retry_queued') AS queued FROM leads l WHERE l.submission_id = ? LIMIT 1"
+            payload=$(jq -n --arg id "$SUBMISSION_ID" --arg sql "$sql" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$payload")
+            status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
+            queued=$(jq -r '.result[0].results[0].queued // 0' <<<"$response")
+            echo "attempt=${attempt} status=${status} queued=${queued}"
+            if [ "$status" = "retry" ] && [ "$queued" = "1" ]; then
+              echo "PASS: falha do Sheets virou retry + Queue"
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Confirmar backlog da Queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${QUEUE_ID}/metrics"
+          for attempt in $(seq 1 20); do
+            response=$(curl --fail-with-body -sS "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+            backlog=$(jq -r '.result.backlog_count // 0' <<<"$response")
+            echo "backlog=${backlog}"
+            if [ "$backlog" -ge 1 ]; then
+              echo "PASS: mensagem armazenada na Queue"
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Purge da Queue de teste
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${QUEUE_ID}/purge"
+          response=$(curl --fail-with-body -sS -X POST "$url" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"delete_messages_permanently":true}')
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "PASS: Queue de teste limpa"
+
+      - name: Limpar D1 do teste
+        if: always() && steps.register.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="DELETE FROM system_events WHERE submission_id = ?; DELETE FROM leads WHERE submission_id = ?;"
+          payload=$(jq -n --arg id "$SUBMISSION_ID" --arg sql "$sql" '{sql:$sql,params:[$id,$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$payload")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          echo "PASS: D1 de teste limpo"
