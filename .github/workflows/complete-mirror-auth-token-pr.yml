@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "scripts/complete-mirror-auth-token.py"
+      - "scripts/fix-reconcile-mirror-token.py"
       - "src/worker.js"
       - "src/worker-entry.js"
       - "scripts/reconcile-sheets.mjs"
@@ -30,6 +31,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Adaptar seletor do reconciliador
+        run: python scripts/fix-reconcile-mirror-token.py
 
       - name: Aplicar migrador idempotente
         run: python scripts/complete-mirror-auth-token.py
