@@ -40,6 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           payload='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"deployment-smoke-nonexistent"}'
-          response=$(curl -sSL --max-time 20 -X POST "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$payload")
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$payload")
+          error=$(echo "$response" | jq -r '.error // "invalid_response"' 2>/dev/null || echo invalid_response)
+          echo "Apps Script POST result=${error}"
           echo "$response" | jq -e '.ok == false and .error == "mirror_unauthorized"' >/dev/null
           echo 'PASS: Apps Script alcança /api/mirror/authorize e rejeita lead inexistente'
