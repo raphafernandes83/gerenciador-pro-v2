@@ -1,0 +1,102 @@
+name: Cloudflare Queue foundation
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-queue-foundation.yml"
+      - "wrangler.jsonc"
+      - "src/worker.js"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-queue-foundation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      RETRY_QUEUE: gerenciador-pro-sheet-retry
+      DLQ_QUEUE: gerenciador-pro-sheet-retry-dlq
+    steps:
+      - name: Criar ou localizar Queues
+        id: queues
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          ensure_queue() {
+            local name="$1"
+            local list id response
+            list=$(curl --fail-with-body -sS "$api" -H "$auth")
+            test "$(jq -r '.success // false' <<<"$list")" = "true"
+            id=$(jq -r --arg name "$name" '.result[]? | select(.queue_name == $name) | .queue_id' <<<"$list" | head -n1)
+
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "Criando Queue ${name}..." >&2
+              response=$(curl -sS -X POST "$api" \
+                -H "$auth" \
+                -H "Content-Type: application/json" \
+                --data "$(jq -n --arg name "$name" '{queue_name:$name}')")
+
+              if [ "$(jq -r '.success // false' <<<"$response")" != "true" ]; then
+                echo "Criacao concorrente ou resposta nao-success; relendo lista..." >&2
+              fi
+
+              list=$(curl --fail-with-body -sS "$api" -H "$auth")
+              id=$(jq -r --arg name "$name" '.result[]? | select(.queue_name == $name) | .queue_id' <<<"$list" | head -n1)
+            fi
+
+            test -n "$id" && test "$id" != "null" || { echo "Nao foi possivel obter Queue ${name}" >&2; exit 1; }
+            printf '%s' "$id"
+          }
+
+          retry_id=$(ensure_queue "$RETRY_QUEUE")
+          dlq_id=$(ensure_queue "$DLQ_QUEUE")
+
+          echo "retry_queue_id=$retry_id" >> "$GITHUB_OUTPUT"
+          echo "dlq_queue_id=$dlq_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: retry=${retry_id} dlq=${dlq_id}"
+
+      - name: Validar Queues e metricas
+        shell: bash
+        env:
+          RETRY_ID: ${{ steps.queues.outputs.retry_queue_id }}
+          DLQ_ID: ${{ steps.queues.outputs.dlq_queue_id }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues"
+
+          retry=$(curl --fail-with-body -sS "${base}/${RETRY_ID}" -H "$auth")
+          dlq=$(curl --fail-with-body -sS "${base}/${DLQ_ID}" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$retry")" = "true"
+          test "$(jq -r '.success // false' <<<"$dlq")" = "true"
+          test "$(jq -r '.result.queue_name' <<<"$retry")" = "$RETRY_QUEUE"
+          test "$(jq -r '.result.queue_name' <<<"$dlq")" = "$DLQ_QUEUE"
+
+          metrics=$(curl --fail-with-body -sS "${base}/${RETRY_ID}/metrics" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$metrics")" = "true"
+          echo "PASS: Queue resources acessiveis"
+
+      - name: Registrar resultado no PR
+        if: success() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETRY_ID: ${{ steps.queues.outputs.retry_queue_id }}
+          DLQ_ID: ${{ steps.queues.outputs.dlq_queue_id }}
+        run: |
+          body=$(printf '### Cloudflare Queue foundation\n\n✅ `%s` criada/localizada.\n✅ `%s` criada/localizada.\n✅ API e métricas validadas.\n\nRetry Queue ID: `%s`\nDLQ ID: `%s`\n\nNenhum consumidor de produção foi ativado.' "$RETRY_QUEUE" "$DLQ_QUEUE" "$RETRY_ID" "$DLQ_ID")
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
