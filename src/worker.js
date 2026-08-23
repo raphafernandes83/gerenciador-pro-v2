@@ -123,10 +123,47 @@ async function markSheetRetry(env, submissionId, reason, details = {}) {
   }
 }
 
+async function enqueueSheetRetry(env, submissionId, reason) {
+  if (!env.SHEET_RETRY_QUEUE || typeof env.SHEET_RETRY_QUEUE.send !== "function") {
+    await recordSystemEvent(env, "sheet_queue_unavailable", submissionId, { reason });
+    return false;
+  }
+
+  try {
+    await env.SHEET_RETRY_QUEUE.send({
+      type: "sheet_mirror_retry",
+      submissionId,
+      reason: clean(reason, 500) || "unknown",
+      queuedAt: new Date().toISOString()
+    }, { delaySeconds: 60 });
+
+    await recordSystemEvent(env, "sheet_retry_queued", submissionId, { reason });
+    return true;
+  } catch (error) {
+    const queueError = clean(error?.message || error, 500) || "queue_send_failed";
+    console.error("sheet_queue_failed", submissionId, queueError);
+    await recordSystemEvent(env, "sheet_queue_failed", submissionId, {
+      reason,
+      queueError
+    });
+    return false;
+  }
+}
+
+async function scheduleSheetRetry(env, submissionId, reason) {
+  try {
+    await markSheetRetry(env, submissionId, reason);
+  } catch (error) {
+    console.error("sheet_retry_status_failed", submissionId, error);
+  }
+
+  await enqueueSheetRetry(env, submissionId, reason);
+}
+
 async function syncLeadToSheet(env, record, payload) {
   const endpoint = clean(env.SHEETS_MIRROR_URL, 2000);
   if (!endpoint) {
-    await markSheetRetry(env, record.submission_id, "mirror_not_configured");
+    await scheduleSheetRetry(env, record.submission_id, "mirror_not_configured");
     return;
   }
 
@@ -167,7 +204,7 @@ async function syncLeadToSheet(env, record, payload) {
       : clean(error?.message || error, 500) || "sheet_unknown_error";
 
     console.error("sheet_sync_failed", record.submission_id, reason);
-    await markSheetRetry(env, record.submission_id, reason);
+    await scheduleSheetRetry(env, record.submission_id, reason);
   } finally {
     clearTimeout(timeout);
   }
@@ -303,7 +340,8 @@ async function health(env) {
     return json({
       ok: row?.ok === 1,
       database: "reachable",
-      sheetMirrorConfigured: Boolean(clean(env.SHEETS_MIRROR_URL, 2000))
+      sheetMirrorConfigured: Boolean(clean(env.SHEETS_MIRROR_URL, 2000)),
+      retryQueueConfigured: Boolean(env.SHEET_RETRY_QUEUE)
     });
   } catch {
     return json({ ok: false, database: "unreachable" }, 503);
