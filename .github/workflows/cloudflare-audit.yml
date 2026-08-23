@@ -8,6 +8,8 @@ on:
       - "migrations/**"
       - "src/**"
       - "wrangler.jsonc"
+      - "script.js"
+      - "config.js"
   push:
     branches:
       - "infra/cloudflare-foundation"
@@ -16,10 +18,12 @@ on:
       - "migrations/**"
       - "src/**"
       - "wrangler.jsonc"
+      - "script.js"
+      - "config.js"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
   pull-requests: write
   statuses: write
@@ -48,6 +52,140 @@ jobs:
           preview_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler versions upload") | .branch_excludes] | any(. == ["production"])' <<<"$triggers")
           test "$prod_ok" = "true" && test "$preview_ok" = "true"
           echo "PASS: Cloudflare token + Builds + branch control"
+
+  migrate_form:
+    if: github.event_name == 'pull_request'
+    needs: audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: infra/cloudflare-foundation
+          fetch-depth: 0
+
+      - name: Migrar transporte do formulario
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path("script.js")
+          text = path.read_text(encoding="utf-8")
+
+          if 'function submitToWorker()' in text and 'endpoint === "/api/register"' in text:
+              print("Formulario ja migrado; nada a alterar.")
+          else:
+              old_config_check = '''  function isConfigured() {
+                const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
+                return endpoint.startsWith("https://script.google.com/") && endpoint.endsWith("/exec");
+              }'''
+              new_config_check = '''  function isConfigured() {
+                const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
+                return endpoint === "/api/register" || /^https?:\/\/[^\s]+\/api\/register(?:[?#].*)?$/.test(endpoint);
+              }'''
+              if old_config_check not in text:
+                  raise SystemExit("Bloco isConfigured original nao encontrado.")
+              text = text.replace(old_config_check, new_config_check, 1)
+
+              pattern = re.compile(
+                  r'  /\*\*\n   \* Envia o formulário para o Apps Script.*?\n  function submitThroughConfirmedIframe\(\) \{.*?\n  \}\n\n  // --- Listeners',
+                  re.S,
+              )
+              new_transport = '''  /**
+               * Envia o cadastro para o Worker de mesma origem.
+               * Sucesso só é exibido depois que o Worker confirma a gravação no D1.
+               */
+              async function submitToWorker() {
+                const endpoint = window.GP_FORM_CONFIG?.endpoint || "/api/register";
+                const submissionId = createSubmissionId();
+                const timeoutMs = Math.max(5000, Number(window.GP_FORM_CONFIG?.requestTimeoutMs || 15000));
+                const data = Object.fromEntries(new FormData(form).entries());
+
+                data.enviado_em_local = new Date().toISOString();
+                data.submission_id = submissionId;
+
+                const controller = new AbortController();
+                const timeoutTimer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+                try {
+                  const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Accept": "application/json"
+                    },
+                    body: JSON.stringify(data),
+                    signal: controller.signal
+                  });
+
+                  let result;
+                  try {
+                    result = await response.json();
+                  } catch (error) {
+                    throw new Error(T("msg.respostaInvalida", "The server returned an invalid response. Please try again."));
+                  }
+
+                  if (!response.ok || !result?.ok) {
+                    throw new Error(result?.error || T("msg.naoGravado", "Your registration was not saved."));
+                  }
+
+                  if (!result.submissionId && !result.ignored) {
+                    throw new Error(T("msg.semConfirmacao", "The server did not confirm the save. Please try again."));
+                  }
+
+                  return result;
+                } catch (error) {
+                  if (error?.name === "AbortError") {
+                    throw new Error(T("msg.semConfirmacao", "The server did not confirm the save in time. Please try again."));
+                  }
+                  throw error;
+                } finally {
+                  window.clearTimeout(timeoutTimer);
+                }
+              }
+
+              // --- Listeners'''
+              text, count = pattern.subn(new_transport, text, count=1)
+              if count != 1:
+                  raise SystemExit(f"Bloco de transporte original nao encontrado de forma unica: {count}")
+
+              old_call = "const result = await submitThroughConfirmedIframe();"
+              if text.count(old_call) != 1:
+                  raise SystemExit("Chamada do transporte original nao encontrada de forma unica.")
+              text = text.replace(old_call, "const result = await submitToWorker();", 1)
+
+              if "submitThroughConfirmedIframe" in text:
+                  raise SystemExit("Referencia antiga ainda presente.")
+              path.write_text(text, encoding="utf-8")
+              Path("config.js").write_text(
+                  'window.GP_FORM_CONFIG={endpoint:"/api/register",requestTimeoutMs:15000};\n',
+                  encoding="utf-8",
+              )
+
+      - name: Validar migracao
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check script.js
+          node --check config.js
+          grep -F 'endpoint:"/api/register"' config.js
+          grep -F 'submitToWorker' script.js
+          ! grep -F 'submitThroughConfirmedIframe' script.js
+
+      - name: Commitar migracao se necessario
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add script.js config.js
+          if git diff --cached --quiet; then
+            echo "PASS: formulario ja estava migrado"
+            exit 0
+          fi
+          git commit -m "api: route capture form through Worker and D1"
+          git push origin HEAD:infra/cloudflare-foundation
+          echo "PASS: formulario migrado e enviado para branch segura"
 
   d1:
     needs: audit
@@ -104,19 +242,9 @@ jobs:
           test "$leads_ok" = "true" && test "$events_ok" = "true"
           echo "PASS: leads + system_events"
 
-      - name: Registrar D1 no PR
-        if: success() && github.event_name == 'pull_request'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DATABASE_ID: ${{ steps.db.outputs.database_id }}
-        run: |
-          body=$(printf '### D1 criado e validado\n\n✅ `%s` pronto.\n✅ Tabelas `leads` e `system_events` prontas.\n✅ Database ID: `%s`.\n\nPróximo: testar `/api/register` no preview.' "$D1_NAME" "$DATABASE_ID")
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
-
   smoke:
     if: github.event_name == 'pull_request'
-    needs: d1
+    needs: [d1, migrate_form]
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -130,15 +258,15 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 36); do
             code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
-            if [ "$code" = "200" ] && jq -e '.ok == true and .database == "reachable"' /tmp/health.json >/dev/null 2>&1; then
-              echo "PASS: /api/health com D1 reachable"
+            config=$(curl -sS "${PREVIEW_URL}/config.js" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .database == "reachable"' /tmp/health.json >/dev/null 2>&1 && grep -F 'endpoint:"/api/register"' <<<"$config" >/dev/null; then
+              echo "PASS: preview atualizado com Worker, D1 e formulario"
               exit 0
             fi
             echo "Preview ainda nao pronto (${attempt}/36, HTTP ${code})"
             sleep 5
           done
           echo "Preview nao ficou pronto a tempo"
-          cat /tmp/health.json 2>/dev/null || true
           exit 1
 
       - name: Enviar cadastro sintetico
@@ -160,10 +288,7 @@ jobs:
               consentimento: true,
               origem: "ci-smoke-test"
             }')
-          response=$(curl --fail-with-body -sS \
-            -X POST "${PREVIEW_URL}/api/register" \
-            -H "Content-Type: application/json" \
-            --data "$payload")
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
           jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
           echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
           echo "PASS: /api/register confirmou gravacao"
@@ -176,11 +301,7 @@ jobs:
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"SELECT submission_id FROM leads WHERE submission_id = ? LIMIT 1", params:[$id]}')
-          response=$(curl --fail-with-body -sS \
-            -X POST "$api" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "$payload")
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$payload")
           jq -e --arg id "$SUBMISSION_ID" '.success == true and (.result[0].results | length) == 1 and .result[0].results[0].submission_id == $id' <<<"$response" >/dev/null
           echo "PASS: cadastro confirmado diretamente no D1"
 
@@ -193,11 +314,7 @@ jobs:
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
           payload=$(jq -n --arg id "$SUBMISSION_ID" '{sql:"DELETE FROM leads WHERE submission_id = ?", params:[$id]}')
-          response=$(curl --fail-with-body -sS \
-            -X POST "$api" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "$payload")
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$payload")
           jq -e '.success == true' <<<"$response" >/dev/null
           echo "PASS: cadastro sintetico removido"
 
@@ -207,5 +324,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          body=$(printf '### Worker + D1 smoke test\n\n✅ `/api/health`: Worker e D1 acessíveis.\n✅ `/api/register`: cadastro sintético confirmado.\n✅ D1: registro confirmado por consulta direta.\n✅ Limpeza: cadastro sintético removido.\n\n**Resultado: PASS — Worker + D1 funcionando no preview.**')
+          body=$(printf '### Formulário + Worker + D1\n\n✅ Formulário do preview usa `/api/register`.\n✅ `/api/health`: Worker e D1 acessíveis.\n✅ Cadastro sintético confirmado no D1.\n✅ Cadastro sintético removido.\n\n**Resultado: PASS — fluxo de cadastro direto no Worker + D1.**')
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" -f body="$body"
