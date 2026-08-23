@@ -6,6 +6,7 @@ const TURNSTILE_TEST_PASS_SECRET = "1x0000000000000000000000000000000AA";
 const TURNSTILE_TEST_FAIL_SECRET = "2x0000000000000000000000000000000AA";
 const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const MAX_REGISTRATION_BYTES = 64 * 1024;
+const MAX_MIRROR_AUTH_BYTES = 64 * 1024;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -15,6 +16,11 @@ function json(data, status = 200) {
       "cache-control": "no-store"
     }
   });
+}
+
+function clean(value, max = 5000) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().slice(0, max);
 }
 
 async function readRegistrationPayload(request) {
@@ -105,9 +111,6 @@ async function validateTurnstile(request, env) {
       return { ok: false, error: "turnstile_invalid", status: 403 };
     }
 
-    // With a real production secret, bind the token to this form action and hostname.
-    // Official dummy keys used only on the exact preview hostname intentionally skip
-    // these checks because their response uses test metadata.
     if (configuredTurnstileSecret(env)) {
       const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || "lead_register").trim();
       const expectedHostname = new URL(request.url).hostname;
@@ -126,16 +129,112 @@ async function validateTurnstile(request, env) {
   }
 }
 
-function registrationRequestTooLarge(request) {
+function requestTooLarge(request, maxBytes) {
   const raw = request.headers.get("content-length");
   if (!raw) return false;
   const bytes = Number(raw);
-  return Number.isFinite(bytes) && bytes > MAX_REGISTRATION_BYTES;
+  return Number.isFinite(bytes) && bytes > maxBytes;
+}
+
+function registrationRequestTooLarge(request) {
+  return requestTooLarge(request, MAX_REGISTRATION_BYTES);
+}
+
+function mirrorValue(value, max = 5000) {
+  return clean(value, max);
+}
+
+function expectedMirrorPayload(lead) {
+  let original = {};
+  try {
+    original = lead.payload_json ? JSON.parse(lead.payload_json) : {};
+  } catch {
+    original = {};
+  }
+
+  return {
+    submission_id: mirrorValue(lead.submission_id, 120),
+    tipo_interesse: mirrorValue(lead.tipo_interesse, 20),
+    nome: mirrorValue(lead.nome, 160),
+    whatsapp: mirrorValue(lead.whatsapp, 80),
+    email: mirrorValue(lead.email, 320),
+    pais: mirrorValue(lead.pais, 120),
+    cidade_estado: mirrorValue(original.cidade_estado, 500),
+    contato_preferido: mirrorValue(original.contato_preferido, 500),
+    experiencia_trading: mirrorValue(original.experiencia_trading, 500),
+    principal_objetivo: mirrorValue(original.principal_objetivo, 1000),
+    canal_divulgacao: mirrorValue(lead.canal_divulgacao, 180),
+    tamanho_publico: mirrorValue(original.tamanho_publico, 500),
+    link_canal: mirrorValue(lead.link_canal, 1000),
+    experiencia_afiliado: mirrorValue(original.experiencia_afiliado, 1000),
+    observacao: mirrorValue(lead.observacao, 5000),
+    consentimento: "Sim",
+    origem: mirrorValue(lead.origem, 500),
+    utm_source: mirrorValue(lead.utm_source, 500),
+    utm_medium: mirrorValue(lead.utm_medium, 500),
+    utm_campaign: mirrorValue(lead.utm_campaign, 500),
+    pagina_url: mirrorValue(lead.pagina_url, 2000),
+    enviado_em_local: mirrorValue(lead.enviado_em_local, 100),
+    user_agent: mirrorValue(lead.user_agent, 1000)
+  };
+}
+
+function mirrorPayloadMatches(expected, supplied) {
+  const keys = Object.keys(expected);
+  return keys.every((key) => mirrorValue(supplied?.[key], key === "observacao" ? 5000 : 5000) === expected[key]);
+}
+
+async function authorizeMirrorWrite(request, env) {
+  if (requestTooLarge(request, MAX_MIRROR_AUTH_BYTES)) {
+    return json({ ok: false, error: "payload_too_large" }, 413);
+  }
+
+  if (!(request.headers.get("content-type") || "").includes("application/json")) {
+    return json({ ok: false, error: "invalid_request" }, 400);
+  }
+
+  let supplied;
+  try {
+    supplied = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_request" }, 400);
+  }
+
+  const submissionId = mirrorValue(supplied?.submission_id, 120);
+  if (!submissionId) return json({ ok: false, error: "mirror_unauthorized" }, 403);
+
+  try {
+    const lead = await env.DB.prepare(
+      `SELECT submission_id,tipo_interesse,nome,whatsapp,email,pais,canal_divulgacao,
+              link_canal,observacao,origem,utm_source,utm_medium,utm_campaign,
+              pagina_url,user_agent,enviado_em_local,payload_json,sheet_sync_status
+       FROM leads WHERE submission_id = ? LIMIT 1`
+    ).bind(submissionId).first();
+
+    if (!lead || !["pending", "retry"].includes(String(lead.sheet_sync_status || ""))) {
+      return json({ ok: false, error: "mirror_unauthorized" }, 403);
+    }
+
+    const expected = expectedMirrorPayload(lead);
+    if (!mirrorPayloadMatches(expected, supplied)) {
+      console.warn("mirror_payload_mismatch");
+      return json({ ok: false, error: "mirror_unauthorized" }, 403);
+    }
+
+    return json({ ok: true });
+  } catch (error) {
+    console.error("mirror_authorization_failed", error?.message || error);
+    return json({ ok: false, error: "mirror_authorization_unavailable" }, 503);
+  }
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/mirror/authorize" && request.method === "POST") {
+      return authorizeMirrorWrite(request, env);
+    }
 
     if (url.pathname === "/api/lots" && request.method === "GET") {
       const market = String(url.searchParams.get("market") || "").trim();
