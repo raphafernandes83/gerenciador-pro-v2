@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       WORKER_NAME: gerenciador-pro-v2
     steps:
       - name: Auditar acesso Cloudflare
@@ -39,8 +39,8 @@ jobs:
             echo
           } > cloudflare-audit-report.md
 
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "- ❌ Secrets obrigatorios ausentes." >> cloudflare-audit-report.md
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "- ❌ CLOUDFLARE_API_TOKEN ausente." >> cloudflare-audit-report.md
             failed=1
           else
             response=$(curl -sS \
@@ -106,7 +106,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment 14 --body-file cloudflare-audit-report.md
+        run: |
+          body=$(cat cloudflare-audit-report.md)
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/14/comments" \
+            -f body="$body"
 
       - name: Encerrar com estado da auditoria
         if: steps.audit.outputs.failed == '1'
