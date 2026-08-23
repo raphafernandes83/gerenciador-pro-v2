@@ -1,0 +1,28 @@
+name: D1 Sheets reconciliation
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: d1-sheets-reconciliation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      RECONCILE_LIMIT: "50"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconciliar D1 com Google Sheets
+        run: node scripts/reconcile-sheets.mjs
