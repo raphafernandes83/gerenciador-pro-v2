@@ -28,25 +28,25 @@ jobs:
         run: |
           set -euo pipefail
           missing='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000001","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot"}'
-          invalid='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"INVALID-TOKEN"}'
+          fail='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
           for attempt in $(seq 1 80); do
             config_code=$(curl -sS -o /tmp/config.js -w '%{http_code}' "${PREVIEW_URL}/config.js" || true)
             missing_code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$missing" || true)
-            invalid_code=$(curl -sS -o /tmp/invalid.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$invalid" || true)
+            fail_code=$(curl -sS -o /tmp/fail.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" -H "X-GP-Turnstile-Test: force-fail" --data "$fail" || true)
             if [ "$config_code" = "200" ] \
               && grep -F 'turnstileSitekey' /tmp/config.js >/dev/null \
               && [ "$missing_code" = "403" ] \
               && jq -e '.error == "turnstile_required"' /tmp/missing.json >/dev/null 2>&1 \
-              && [ "$invalid_code" = "403" ] \
-              && jq -e '.error == "turnstile_invalid"' /tmp/invalid.json >/dev/null 2>&1; then
+              && [ "$fail_code" = "403" ] \
+              && jq -e '.error == "turnstile_invalid"' /tmp/fail.json >/dev/null 2>&1; then
               echo "PASS: frontend + Worker Turnstile estabilizados"
               exit 0
             fi
-            echo "aguardando preview ${attempt}/80 config=${config_code} missing=${missing_code} invalid=${invalid_code}"
+            echo "aguardando preview ${attempt}/80 config=${config_code} missing=${missing_code} forced_fail=${fail_code}"
             sleep 3
           done
           echo "missing:"; cat /tmp/missing.json 2>/dev/null || true
-          echo "invalid:"; cat /tmp/invalid.json 2>/dev/null || true
+          echo "forced fail:"; cat /tmp/fail.json 2>/dev/null || true
           exit 1
 
       - name: Sem token deve bloquear
@@ -58,14 +58,14 @@ jobs:
           test "$code" = "403"
           jq -e '.ok == false and .error == "turnstile_required"' /tmp/missing.json >/dev/null
 
-      - name: Token invalido deve bloquear
+      - name: Rejeicao do Siteverify deve bloquear
         shell: bash
         run: |
           set -euo pipefail
-          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"INVALID-TOKEN"}'
-          code=$(curl -sS -o /tmp/invalid.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          code=$(curl -sS -o /tmp/fail.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" -H "X-GP-Turnstile-Test: force-fail" --data "$payload")
           test "$code" = "403"
-          jq -e '.ok == false and .error == "turnstile_invalid"' /tmp/invalid.json >/dev/null
+          jq -e '.ok == false and .error == "turnstile_invalid"' /tmp/fail.json >/dev/null
 
       - name: Token oficial de teste deve passar
         shell: bash
