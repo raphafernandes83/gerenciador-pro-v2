@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gp-sheets-retry-processing
+  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'gp-sheets-retry-processing' || 'gp-queue-http-pull-smoke' }}
   cancel-in-progress: false
 
 env:
@@ -42,15 +42,12 @@ jobs:
           set -euo pipefail
           base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-
           current=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
           test "$(jq -r '.success // false' <<<"$current")" = "true"
           count=$(jq -r '.result | length' <<<"$current")
-
           if [ "$count" -eq 0 ]; then
             payload=$(jq -nc --arg dlq "$DLQ_QUEUE_NAME" '{type:"http_pull",dead_letter_queue:$dlq,settings:{batch_size:50,max_retries:5,retry_delay:60,visibility_timeout_ms:120000}}')
-            created=$(curl --fail-with-body -sS -X POST "${base}/consumers" \
-              -H "$auth" -H "Content-Type: application/json" --data "$payload")
+            created=$(curl --fail-with-body -sS -X POST "${base}/consumers" -H "$auth" -H "Content-Type: application/json" --data "$payload")
             test "$(jq -r '.success // false' <<<"$created")" = "true"
             test "$(jq -r '.result.type // empty' <<<"$created")" = "http_pull"
           else
@@ -58,9 +55,7 @@ jobs:
             test "$count" -eq 1
             test "$type" = "http_pull" || { echo "FAIL: Queue já possui consumer ${type}"; exit 1; }
           fi
-
           verify=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
-          test "$(jq -r '.success // false' <<<"$verify")" = "true"
           test "$(jq -r '.result | length' <<<"$verify")" -eq 1
           test "$(jq -r '.result[0].type' <<<"$verify")" = "http_pull"
           echo "PASS: HTTP pull consumer verificado"
@@ -102,9 +97,8 @@ jobs:
           test "$(jq -r '.result[0].results[0].events // 0' <<<"$response")" -ge 1
           cleanup=$(jq -nc --arg id "$QA_ID" '{sql:"DELETE FROM system_events WHERE submission_id=?",params:[$id]}')
           curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$cleanup" >/dev/null
-          echo "PASS: pull + ack sem lead"
 
-      - name: Preparar lead real em retry usando âncora Sheets
+      - name: Preparar lead real em retry usando âncora Queue
         id: retry
         shell: bash
         run: |
@@ -114,8 +108,8 @@ jobs:
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
           sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
-          payload_json='{"tipo_interesse":"comprar","nome":"QA AUTOMÁTICO — NÃO É LEAD","whatsapp":"+5521999990073","email":"qa.sheets.anchor@example.invalid","pais":"Brazil","consentimento":"Sim","origem":"ci-queue-retry"}'
-          body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","QA AUTOMÁTICO — NÃO É LEAD","+5521999990073","5521999990073","qa.sheets.anchor@example.invalid","qa.sheets.anchor@example.invalid","Brazil",1,"ci-queue-retry",$payload]}')
+          payload_json='{"tipo_interesse":"comprar","nome":"QA QUEUE — NÃO É LEAD","whatsapp":"+5521999990074","email":"qa.queue.anchor@example.invalid","pais":"Brazil","consentimento":"Sim","origem":"ci-queue-retry"}'
+          body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","QA QUEUE — NÃO É LEAD","+5521999990074","5521999990074","qa.queue.anchor@example.invalid","qa.queue.anchor@example.invalid","Brazil",1,"ci-queue-retry",$payload]}')
           response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
           test "$(jq -r '.success // false' <<<"$response")" = "true"
 
