@@ -4,9 +4,14 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/d1-sheets-reconcile.yml"
+      - "scripts/reconcile-sheets.mjs"
 
 concurrency:
-  group: d1-sheets-reconciliation
+  group: gp-shared-sheets-test-contact
   cancel-in-progress: false
 
 permissions:
@@ -14,6 +19,7 @@ permissions:
 
 jobs:
   reconcile:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -26,3 +32,61 @@ jobs:
       - uses: actions/checkout@v4
       - name: Reconciliar D1 com Google Sheets
         run: node scripts/reconcile-sheets.mjs
+
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      FAIL_ON_RECONCILE_ERROR: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar um único lead retry de QA
+        id: seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          id="reconcile-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
+          body=$(jq -nc --arg sql "$sql" --arg id "$id" '{sql:$sql,params:[$id,"comprar","TESTE CHATGPT — PODE APAGAR","+5521900000000","5521900000000","teste.gerenciador.pro.20260819@example.com","teste.gerenciador.pro.20260819@example.com","Brazil",1,"reconcile-smoke","{}"]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+
+      - name: Reconciliar somente o lead de QA
+        env:
+          RECONCILE_SUBMISSION_ID: ${{ steps.seed.outputs.id }}
+        run: node scripts/reconcile-sheets.mjs
+
+      - name: Provar retry para synced
+        shell: bash
+        env:
+          ID: ${{ steps.seed.outputs.id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          body=$(jq -nc --arg id "$ID" '{sql:"SELECT sheet_sync_status,sheet_sync_attempts FROM leads WHERE submission_id=?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")" = synced
+          test "$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")" -ge 1
+          echo 'PASS: reconciliador isolado retry -> synced'
+
+      - name: Limpar QA
+        if: always() && steps.seed.outputs.id != ''
+        shell: bash
+        env:
+          ID: ${{ steps.seed.outputs.id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          for sql in "DELETE FROM system_events WHERE submission_id=?" "DELETE FROM leads WHERE submission_id=?"; do
+            body=$(jq -nc --arg sql "$sql" --arg id "$ID" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+            test "$(jq -r '.success // false' <<<"$response")" = true
+          done
