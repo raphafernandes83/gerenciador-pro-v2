@@ -15,7 +15,7 @@ const CONFIG = Object.freeze({
   CADASTROS_SHEET: "Cadastros",
   RESUMO_SHEET: "Resumo",
   PROPERTY_KEY: "GP_LEADS_SPREADSHEET_ID_20260802_V6",
-  MIRROR_AUTH_URL: "https://gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize",
+  MIRROR_AUTH_PROPERTY_KEY: "GP_MIRROR_AUTH_URL",
   LOCK_TIMEOUT_MS: 30000,
   AUTH_TIMEOUT_MS: 10000,
   MAX_TEXT_LENGTH: 5000
@@ -89,11 +89,23 @@ function INSTALAR_SISTEMA() {
  * Não expõe ID, URL, nome da planilha nem contagem de cadastros.
  */
 function doGet(e) {
+  const properties = PropertiesService.getScriptProperties();
+  const spreadsheetConfigured = Boolean(plainText_(properties.getProperty(CONFIG.PROPERTY_KEY), 200));
+  let mirrorAuthConfigured = true;
+
+  try {
+    getMirrorAuthUrl_();
+  } catch (error) {
+    mirrorAuthConfigured = false;
+  }
+
+  const ready = spreadsheetConfigured && mirrorAuthConfigured;
+
   return jsonOutput_({
-    ok: true,
+    ok: ready,
     service: CONFIG.SERVICE_NAME,
     version: CONFIG.VERSION,
-    status: "ready",
+    status: ready ? "ready" : "not_ready",
     timestamp: new Date().toISOString()
   });
 }
@@ -222,6 +234,19 @@ function doPost(e) {
  * Uma chamada direta ao Apps Script sem lead válido no D1, com ID inventado
  * ou com qualquer campo adulterado é recusada antes da planilha.
  */
+function getMirrorAuthUrl_() {
+  const value = PropertiesService
+    .getScriptProperties()
+    .getProperty(CONFIG.MIRROR_AUTH_PROPERTY_KEY);
+  const url = plainText_(value, 2000);
+
+  if (!/^https:\/\/[^\s]+\/api\/mirror\/authorize$/.test(url)) {
+    throw new Error("MIRROR_AUTH_NOT_CONFIGURED");
+  }
+
+  return url;
+}
+
 function authorizeMirrorPayload_(payload) {
   const submissionId = cleanText_(payload.submission_id);
   const mirrorAuthToken = plainText_(payload._mirror_auth_token, 128);
@@ -230,10 +255,11 @@ function authorizeMirrorPayload_(payload) {
   }
 
   const authPayload = buildAuthorizationPayload_(payload);
+  const mirrorAuthUrl = getMirrorAuthUrl_();
   let response;
 
   try {
-    response = UrlFetchApp.fetch(CONFIG.MIRROR_AUTH_URL, {
+    response = UrlFetchApp.fetch(mirrorAuthUrl, {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(authPayload),
