@@ -1,0 +1,124 @@
+name: Worker lots smoke isolated
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/worker-lots-smoke-isolated.yml"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/worker-lots-smoke-isolated.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      TEST_EMAIL: qa.lots.20260823@example.com
+      TEST_PHONE: +5521900000001
+      MARKET: ci-worker-lot-isolated
+    steps:
+      - name: Aguardar endpoint de lotes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -o /tmp/lots.json -w '%{http_code}' "${PREVIEW_URL}/api/lots?market=${MARKET}" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true' /tmp/lots.json >/dev/null 2>&1; then exit 0; fi
+            sleep 3
+          done
+          exit 1
+
+      - name: Preparar lote isolado
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in \
+            "DELETE FROM system_events WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
+            "DELETE FROM lead_lot_allocations WHERE submission_id IN (SELECT submission_id FROM leads WHERE email_norm = ?)" \
+            "DELETE FROM leads WHERE email_norm = ?"; do
+            body=$(jq -nc --arg sql "$sql" --arg email "$TEST_EMAIL" '{sql:$sql,params:[$email]}')
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
+          done
+          body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
+          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
+          sql="INSERT INTO registration_lots (market_key,lot_number,label,capacity,claimed_count,price_minor,currency_code,state,display_order,opened_at) VALUES (?,1,'QA LOT',2,0,7900,'BRL','open',1,strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
+          body=$(jq -nc --arg sql "$sql" --arg market "$MARKET" '{sql:$sql,params:[$market]}')
+          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
+
+      - name: Confirmar contador inicial
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body -sS "${PREVIEW_URL}/api/lots?market=${MARKET}")
+          jq -e '.ok == true and .configured == true and .current.remaining == 2 and .current.priceMinor == 7900 and .current.currency == "BRL"' <<<"$response" >/dev/null
+
+      - name: Cadastrar e reservar uma vaga
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="worker-lot-isolated-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload=$(jq -nc --arg id "$submission_id" --arg market "$MARKET" --arg email "$TEST_EMAIL" --arg phone "$TEST_PHONE" '{submission_id:$id,tipo_interesse:"comprar",nome:"TESTE LOTES — PODE APAGAR",whatsapp:$phone,email:$email,pais:$market,consentimento:"Sim",origem:"ci-worker-lot-isolated"}')
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          echo "$response"
+          jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id and .lotStatus == "allocated" and .lot.remaining == 1 and .lot.priceMinor == 7900 and .lot.currency == "BRL"' <<<"$response" >/dev/null
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+
+      - name: Confirmar contador caiu para 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/after.json -w '%{http_code}' "${PREVIEW_URL}/api/lots?market=${MARKET}" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .current.remaining == 1 and .current.claimed == 1' /tmp/after.json >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/after.json || true
+          exit 1
+
+      - name: Confirmar espelho como duplicado existente
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for attempt in $(seq 1 20); do
+            body=$(jq -nc --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status FROM leads WHERE submission_id = ? LIMIT 1",params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+            status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
+            if [ "$status" = "synced" ]; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Limpar fixture D1
+        if: always()
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          if [ -n "${SUBMISSION_ID:-}" ]; then
+            for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM lead_lot_allocations WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
+              body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+              curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
+            done
+          fi
+          body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
+          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
