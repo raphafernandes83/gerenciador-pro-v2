@@ -97,10 +97,9 @@ jobs:
         run: |
           set -euo pipefail
           url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DB_ID}/time_travel/restore"
-          body=$(jq -nc --arg bookmark "$BOOKMARK" '{bookmark:$bookmark}')
-          response=$(curl --fail-with-body -sS -X POST "$url" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" --data "$body")
+          response=$(curl --fail-with-body -sS -X POST \
+            --get --data-urlencode "bookmark=${BOOKMARK}" "$url" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           test "$(jq -r '.success // false' <<<"$response")" = "true"
           test -n "$(jq -r '.result.previous_bookmark // empty' <<<"$response")"
           echo "PASS: restore aceito"
