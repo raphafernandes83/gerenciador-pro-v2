@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   migrate:
@@ -27,23 +29,24 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
 
           path = Path("script.js")
           text = path.read_text(encoding="utf-8")
 
           if 'function submitToWorker()' not in text:
-              config_pattern = re.compile(
-                  r'  function isConfigured\(\) \{\n.*?\n  \}',
-                  re.S,
-              )
+              config_start = text.find("  function isConfigured() {")
+              config_end_marker = "\n  }\n"
+              config_end = text.find(config_end_marker, config_start)
+              if config_start < 0 or config_end < 0:
+                  raise SystemExit("Funcao isConfigured nao encontrada.")
+              config_end += len(config_end_marker)
+
               new_config_check = '''  function isConfigured() {
             const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
-            return endpoint === "/api/register" || /^https?:\/\/[^\s]+\/api\/register(?:[?#].*)?$/.test(endpoint);
-          }'''
-              text, count = config_pattern.subn(new_config_check, text, count=1)
-              if count != 1:
-                  raise SystemExit("isConfigured nao encontrado de forma unica.")
+            return endpoint === "/api/register" || endpoint.endsWith("/api/register");
+          }
+'''
+              text = text[:config_start] + new_config_check + text[config_end:]
 
               start_marker = "  /**\n   * Envia o formulário para o Apps Script"
               end_marker = "\n  // --- Listeners"
@@ -135,3 +138,12 @@ jobs:
           fi
           git commit -m "api: route capture form through Worker and D1"
           git push origin HEAD:infra/cloudflare-foundation
+
+      - name: Registrar resultado
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/14/comments" \
+            -f body='### Migração do formulário\n\n✅ `script.js` validado.\n✅ `config.js` aponta para `/api/register`.\n✅ Transporte antigo por iframe removido.\n\n**Resultado: PASS — formulário direcionado ao Worker na branch segura.**'
