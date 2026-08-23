@@ -1,8 +1,8 @@
 name: D1 Time Travel recovery drill
 
 on:
-  push:
-    branches: ["infra/cloudflare-foundation"]
+  pull_request:
+    branches: ["main"]
     paths:
       - ".github/workflows/d1-time-travel-drill.yml"
   workflow_dispatch:
