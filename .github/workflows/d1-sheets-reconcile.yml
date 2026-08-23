@@ -1,4 +1,3 @@
-# post-auth revalidation 2026-08-23
 name: D1 Sheets reconciliation
 
 on:
@@ -7,6 +6,11 @@ on:
   workflow_dispatch:
   pull_request:
     branches: ["main"]
+    paths:
+      - ".github/workflows/d1-sheets-reconcile.yml"
+      - "scripts/reconcile-sheets.mjs"
+  push:
+    branches: ["infra/cloudflare-foundation"]
     paths:
       - ".github/workflows/d1-sheets-reconcile.yml"
       - "scripts/reconcile-sheets.mjs"
@@ -35,7 +39,7 @@ jobs:
         run: node scripts/reconcile-sheets.mjs
 
   smoke:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
