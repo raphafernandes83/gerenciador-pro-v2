@@ -1,0 +1,103 @@
+name: Operational health monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/ops-monitor.yml"
+
+concurrency:
+  group: operational-health-monitor
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      RETRY_ALERT_COUNT: "100"
+      RETRY_AGE_MINUTES: "30"
+      QUEUE_BACKLOG_ALERT: "500"
+    steps:
+      - name: Consultar D1 sem dados pessoais
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          sql="SELECT COUNT(*) AS total, SUM(CASE WHEN sheet_sync_status='synced' THEN 1 ELSE 0 END) AS synced, SUM(CASE WHEN sheet_sync_status='pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN sheet_sync_status='retry' THEN 1 ELSE 0 END) AS retry, SUM(CASE WHEN sheet_sync_status='failed' THEN 1 ELSE 0 END) AS failed, COALESCE(CAST((julianday('now')-julianday(MIN(CASE WHEN sheet_sync_status='retry' THEN created_at END)))*1440 AS INTEGER),0) AS oldest_retry_minutes FROM leads"
+          body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          row=$(jq -c '.result[0].results[0]' <<<"$response")
+          echo "total=$(jq -r '.total // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+          echo "synced=$(jq -r '.synced // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+          echo "pending=$(jq -r '.pending // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+          echo "retry=$(jq -r '.retry // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+          echo "failed=$(jq -r '.failed // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+          echo "oldest_retry=$(jq -r '.oldest_retry_minutes // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
+
+      - name: Consultar Queue
+        id: queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}/metrics"
+          response=$(curl --fail-with-body -sS "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+          backlog=$(jq -r '.result.backlog_count // 0' <<<"$response")
+          echo "backlog=$backlog" >> "$GITHUB_OUTPUT"
+
+      - name: Resumo operacional
+        shell: bash
+        env:
+          TOTAL: ${{ steps.d1.outputs.total }}
+          SYNCED: ${{ steps.d1.outputs.synced }}
+          PENDING: ${{ steps.d1.outputs.pending }}
+          RETRY: ${{ steps.d1.outputs.retry }}
+          FAILED: ${{ steps.d1.outputs.failed }}
+          OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
+          QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+        run: |
+          {
+            echo "## Gerenciador PRO — saúde operacional"
+            echo ""
+            echo "| Métrica | Valor |"
+            echo "|---|---:|"
+            echo "| Leads D1 | ${TOTAL} |"
+            echo "| Sheets synced | ${SYNCED} |"
+            echo "| Sheets pending | ${PENDING} |"
+            echo "| Sheets retry | ${RETRY} |"
+            echo "| Sheets failed | ${FAILED} |"
+            echo "| Retry mais antigo | ${OLDEST_RETRY} min |"
+            echo "| Queue backlog | ${QUEUE_BACKLOG} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Aplicar limites de alerta
+        shell: bash
+        env:
+          RETRY: ${{ steps.d1.outputs.retry }}
+          FAILED: ${{ steps.d1.outputs.failed }}
+          OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
+          QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+        run: |
+          set -euo pipefail
+          alert=0
+          if [ "${FAILED}" -gt 0 ]; then echo "ALERTA: leads em estado failed=${FAILED}"; alert=1; fi
+          if [ "${RETRY}" -ge "${RETRY_ALERT_COUNT}" ]; then echo "ALERTA: retries=${RETRY}"; alert=1; fi
+          if [ "${RETRY}" -gt 0 ] && [ "${OLDEST_RETRY}" -ge "${RETRY_AGE_MINUTES}" ]; then echo "ALERTA: retry mais antigo=${OLDEST_RETRY}min"; alert=1; fi
+          if [ "${QUEUE_BACKLOG}" -ge "${QUEUE_BACKLOG_ALERT}" ]; then echo "ALERTA: queue backlog=${QUEUE_BACKLOG}"; alert=1; fi
+          if [ "$alert" -ne 0 ]; then exit 1; fi
+          echo "PASS: saúde operacional dentro dos limites"
