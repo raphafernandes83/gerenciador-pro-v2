@@ -5,6 +5,7 @@ const PREVIEW_HOST = "infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofi
 const TURNSTILE_TEST_PASS_SECRET = "1x0000000000000000000000000000000AA";
 const TURNSTILE_TEST_FAIL_SECRET = "2x0000000000000000000000000000000AA";
 const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const MAX_REGISTRATION_BYTES = 64 * 1024;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -36,8 +37,12 @@ async function readRegistrationMarket(request) {
   return "";
 }
 
+function configuredTurnstileSecret(env) {
+  return String(env.TURNSTILE_SECRET_KEY || "").trim();
+}
+
 function turnstileSecretFor(request, env) {
-  const configured = String(env.TURNSTILE_SECRET_KEY || "").trim();
+  const configured = configuredTurnstileSecret(env);
   if (configured) return configured;
 
   const host = new URL(request.url).hostname;
@@ -100,9 +105,16 @@ async function validateTurnstile(request, env) {
       return { ok: false, error: "turnstile_invalid", status: 403 };
     }
 
-    const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || "").trim();
-    if (expectedAction && result?.action !== expectedAction) {
-      return { ok: false, error: "turnstile_invalid", status: 403 };
+    // With a real production secret, bind the token to this form action and hostname.
+    // Official dummy keys used only on the exact preview hostname intentionally skip
+    // these checks because their response uses test metadata.
+    if (configuredTurnstileSecret(env)) {
+      const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || "lead_register").trim();
+      const expectedHostname = new URL(request.url).hostname;
+      if (result?.action !== expectedAction || result?.hostname !== expectedHostname) {
+        console.warn("turnstile_context_mismatch");
+        return { ok: false, error: "turnstile_invalid", status: 403 };
+      }
     }
 
     return { ok: true };
@@ -112,6 +124,13 @@ async function validateTurnstile(request, env) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function registrationRequestTooLarge(request) {
+  const raw = request.headers.get("content-length");
+  if (!raw) return false;
+  const bytes = Number(raw);
+  return Number.isFinite(bytes) && bytes > MAX_REGISTRATION_BYTES;
 }
 
 export default {
@@ -132,6 +151,10 @@ export default {
     }
 
     if (url.pathname === "/api/register" && request.method === "POST") {
+      if (registrationRequestTooLarge(request)) {
+        return json({ ok: false, error: "payload_too_large" }, 413);
+      }
+
       const securityRequest = request.clone();
       const marketRequest = request.clone();
 
