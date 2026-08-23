@@ -71,10 +71,10 @@ jobs:
             code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
             config=$(curl -sS "${PREVIEW_URL}/config.js" || true)
             if [ "$code" = "200" ] \
-              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true' /tmp/health.json >/dev/null 2>&1 \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null 2>&1 \
               && grep -F '/api/register' <<<"$config" >/dev/null \
               && grep -F 'turnstileSitekey' <<<"$config" >/dev/null; then
-              echo "PASS: preview + D1 + Sheets + Queue + Turnstile config"
+              echo "PASS: preview + D1 + Sheets + Queue + Turnstile + rate limit"
               exit 0
             fi
             sleep 3
