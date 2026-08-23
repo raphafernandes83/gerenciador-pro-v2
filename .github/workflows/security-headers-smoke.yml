@@ -1,0 +1,86 @@
+name: Web security headers smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/security-headers-smoke.yml"
+      - "src/worker-entry.js"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/security-headers-smoke.yml"
+      - "src/worker-entry.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar headers de seguranca
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            curl -sS -D /tmp/headers.txt -o /tmp/index.html "${PREVIEW_URL}/" || true
+            if grep -qi '^content-security-policy:' /tmp/headers.txt \
+              && grep -qi '^x-content-type-options: nosniff' /tmp/headers.txt \
+              && grep -qi '^x-frame-options: DENY' /tmp/headers.txt; then
+              echo "PASS: preview com headers atualizado"
+              exit 0
+            fi
+            sleep 3
+          done
+          cat /tmp/headers.txt 2>/dev/null || true
+          exit 1
+
+      - name: Validar CSP compativel com Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          csp=$(grep -i '^content-security-policy:' /tmp/headers.txt | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r')
+          grep -F "default-src 'self'" <<<"$csp" >/dev/null
+          grep -F "script-src 'self' https://challenges.cloudflare.com" <<<"$csp" >/dev/null
+          grep -F "frame-src https://challenges.cloudflare.com" <<<"$csp" >/dev/null
+          grep -F "connect-src 'self' https://challenges.cloudflare.com" <<<"$csp" >/dev/null
+          grep -F "frame-ancestors 'none'" <<<"$csp" >/dev/null
+          echo "PASS: CSP Turnstile + anti-frame"
+
+      - name: Validar demais headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qi '^referrer-policy: strict-origin-when-cross-origin' /tmp/headers.txt
+          grep -qi '^permissions-policy: .*camera=()' /tmp/headers.txt
+          grep -qi '^strict-transport-security: max-age=31536000' /tmp/headers.txt
+          echo "PASS: security headers"
+
+      - name: Origem cruzada deve bloquear antes do Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"ORIGIN QA","whatsapp":"+5521900000088","pais":"Brazil","consentimento":"Sim"}'
+          code=$(curl -sS -o /tmp/cross.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" \
+            -H 'Origin: https://evil.example' \
+            -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "origin_not_allowed"' /tmp/cross.json >/dev/null
+          echo "PASS: cross-origin bloqueado"
+
+      - name: Mesma origem deve chegar ao Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"ORIGIN QA","whatsapp":"+5521900000088","pais":"Brazil","consentimento":"Sim"}'
+          code=$(curl -sS -o /tmp/same.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" \
+            -H "Origin: ${PREVIEW_URL}" \
+            -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "turnstile_required"' /tmp/same.json >/dev/null
+          echo "PASS: same-origin aceito pelo origin gate"
