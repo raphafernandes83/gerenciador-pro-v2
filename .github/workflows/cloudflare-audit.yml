@@ -25,6 +25,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       WORKER_NAME: gerenciador-pro-v2
+      BOOTSTRAP_BUILD_UUID: 69fbbd6b-de5d-4e22-b0e5-168641be3394
     steps:
       - name: Auditar acesso Cloudflare
         id: audit
@@ -32,6 +33,7 @@ jobs:
         run: |
           set +e
           failed=0
+          tag=""
           {
             echo "### Cloudflare API audit"
             echo
@@ -57,31 +59,39 @@ jobs:
             response=$(curl -sS \
               "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-            if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$response")" != "true" ]; then
-              echo "- ❌ Token nao conseguiu listar Workers." >> cloudflare-audit-report.md
-              jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$response" >> cloudflare-audit-report.md
+            if [ $? -eq 0 ] && [ "$(jq -r '.success // false' <<<"$response")" = "true" ]; then
+              tag=$(jq -r --arg name "$WORKER_NAME" '.result[]? | select(.id == $name) | .tag' <<<"$response" | head -n1)
+              echo "- ✅ Worker tag obtido pela API de Workers." >> cloudflare-audit-report.md
+            else
+              echo "- ⚠️ API de Workers sem permissao; tentando bootstrap pelo Builds API." >> cloudflare-audit-report.md
+              build=$(curl -sS \
+                "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+              if [ $? -eq 0 ] && [ "$(jq -r '.success // false' <<<"$build")" = "true" ]; then
+                tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
+                echo "- ✅ Workers Builds API autorizado; Worker tag recuperado pelo build." >> cloudflare-audit-report.md
+              else
+                echo "- ❌ Token nao conseguiu consultar o Workers Builds API." >> cloudflare-audit-report.md
+                jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$build" >> cloudflare-audit-report.md
+                failed=1
+              fi
+            fi
+
+            if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+              echo "- ❌ Nao foi possivel obter o identificador interno do Worker." >> cloudflare-audit-report.md
               failed=1
             else
-              echo "- ✅ Listagem de Workers autorizada." >> cloudflare-audit-report.md
-              tag=$(jq -r --arg name "$WORKER_NAME" '.result[]? | select(.id == $name) | .tag' <<<"$response" | head -n1)
-              if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-                echo "- ❌ Worker \`${WORKER_NAME}\` nao encontrado." >> cloudflare-audit-report.md
+              triggers=$(curl -sS \
+                "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+              if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$triggers")" != "true" ]; then
+                echo "- ❌ Token nao conseguiu consultar Workers Builds triggers." >> cloudflare-audit-report.md
+                jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$triggers" >> cloudflare-audit-report.md
                 failed=1
               else
-                echo "- ✅ Worker \`${WORKER_NAME}\` encontrado pela API." >> cloudflare-audit-report.md
-
-                triggers=$(curl -sS \
-                  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
-                  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-                if [ $? -ne 0 ] || [ "$(jq -r '.success // false' <<<"$triggers")" != "true" ]; then
-                  echo "- ❌ Token nao conseguiu consultar Workers Builds triggers." >> cloudflare-audit-report.md
-                  jq -r '.errors[]? | "  - erro " + ((.code // "?")|tostring) + ": " + (.message // "sem mensagem")' <<<"$triggers" >> cloudflare-audit-report.md
-                  failed=1
-                else
-                  count=$(jq '.result | length' <<<"$triggers")
-                  echo "- ✅ Workers Builds acessivel: ${count} trigger(s)." >> cloudflare-audit-report.md
-                  jq -r '.result[]? | "  - `" + (.trigger_name // "sem nome") + "`: includes=`" + ((.branch_includes // []) | join(",")) + "`, excludes=`" + ((.branch_excludes // []) | join(",")) + "`, deploy=`" + (.deploy_command // "") + "`"' <<<"$triggers" >> cloudflare-audit-report.md
-                fi
+                count=$(jq '.result | length' <<<"$triggers")
+                echo "- ✅ Workers Builds acessivel: ${count} trigger(s)." >> cloudflare-audit-report.md
+                jq -r '.result[]? | "  - `" + (.trigger_name // "sem nome") + "`: uuid=`" + (.trigger_uuid // "") + "`, includes=`" + ((.branch_includes // []) | join(",")) + "`, excludes=`" + ((.branch_excludes // []) | join(",")) + "`, deploy=`" + (.deploy_command // "") + "`"' <<<"$triggers" >> cloudflare-audit-report.md
               fi
             fi
           fi
