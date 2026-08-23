@@ -49,16 +49,16 @@ jobs:
           cp scripts/apps-script/Code.secure.gs /tmp/code-secure.js
           node --check /tmp/code-secure.js
 
-      - name: Commitar somente se necessario
+      - name: Commitar somente codigo do produto
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo 'PASS: mirror auth token já está completo'
+          git add src/worker.js src/worker-entry.js scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs
+          if git diff --cached --quiet; then
+            echo 'PASS: código do mirror auth token já está completo'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/worker.js src/worker-entry.js scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs .github/workflows/mirror-auth-smoke.yml .github/workflows/apps-script-secure-check.yml .github/workflows/production-readiness.yml
           git commit -m 'security: ligar mirror auth token ponta a ponta'
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
