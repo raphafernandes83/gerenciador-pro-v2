@@ -1,5 +1,4 @@
 name: Apps Script secure source check
-# trigger: complete mirror auth token
 
 on:
   pull_request:
@@ -36,6 +35,8 @@ jobs:
           set -euo pipefail
           file=scripts/apps-script/Code.secure.gs
           grep -F 'MIRROR_AUTH_URL' "$file" >/dev/null
+          grep -F 'VERSION: "2026-08-23.3"' "$file" >/dev/null
+          grep -F '_mirror_auth_token' "$file" >/dev/null
           grep -F 'authorizeMirrorPayload_' "$file" >/dev/null
           grep -F 'findSubmissionId_' "$file" >/dev/null
           grep -F 'OFFICIAL_SPREADSHEET_UNAVAILABLE' "$file" >/dev/null
@@ -44,4 +45,4 @@ jobs:
           ! grep -F 'HtmlService' "$file" >/dev/null
           ! grep -F 'spreadsheetUrl:' "$file" >/dev/null
           ! grep -F 'spreadsheetId:' "$file" >/dev/null
-          echo "PASS: Apps Script seguro preparado"
+          echo "PASS: Apps Script v3 exige capability token e não expõe dados internos"
