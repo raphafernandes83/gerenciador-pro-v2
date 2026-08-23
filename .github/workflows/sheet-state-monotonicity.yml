@@ -1,0 +1,100 @@
+name: Sheet sync state monotonicity
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/sheet-state-monotonicity.yml"
+      - "src/worker.js"
+      - "scripts/reconcile-sheets.mjs"
+      - "scripts/pull-sheet-retry-queue.mjs"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/sheet-state-monotonicity.yml"
+      - "src/worker.js"
+      - "scripts/reconcile-sheets.mjs"
+      - "scripts/pull-sheet-retry-queue.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheet-state-monotonicity
+  cancel-in-progress: false
+
+jobs:
+  monotonicity:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+    steps:
+      - name: Preparar dois leads sintéticos
+        id: seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          synced="mono-synced-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          pending="mono-pending-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "synced=$synced" >> "$GITHUB_OUTPUT"
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+          for mode in synced pending; do
+            if [ "$mode" = synced ]; then id="$synced"; status=synced; suffix=71; else id="$pending"; status=pending; suffix=72; fi
+            body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg status "$status" --arg phone "55219999999${suffix}" '{sql:$sql,params:[$id,"comprar","MONOTONIC QA",$phone,$phone,($id+"@example.invalid"),($id+"@example.invalid"),"Brazil",1,"monotonicity-smoke","{}",$status]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+            test "$(jq -r '.success // false' <<<"$response")" = true
+          done
+
+      - name: Provar que synced não regride para retry
+        shell: bash
+        env:
+          ID: ${{ steps.seed.outputs.synced }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          sql="UPDATE leads SET sheet_sync_status='retry',sheet_sync_attempts=sheet_sync_attempts+1 WHERE submission_id=? AND COALESCE(sheet_sync_status,'pending') <> 'synced'"
+          body=$(jq -nc --arg sql "$sql" --arg id "$ID" '{sql:$sql,params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          changes=$(jq -r '.result[0].meta.changes // .result[0].changes // 0' <<<"$response")
+          test "$changes" -eq 0
+          check=$(jq -nc --arg id "$ID" '{sql:"SELECT sheet_sync_status FROM leads WHERE submission_id=?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$check")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status' <<<"$response")" = synced
+          echo 'PASS: synced permaneceu terminal'
+
+      - name: Provar que pending pode ir para retry
+        shell: bash
+        env:
+          ID: ${{ steps.seed.outputs.pending }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          sql="UPDATE leads SET sheet_sync_status='retry',sheet_sync_attempts=sheet_sync_attempts+1 WHERE submission_id=? AND COALESCE(sheet_sync_status,'pending') <> 'synced'"
+          body=$(jq -nc --arg sql "$sql" --arg id "$ID" '{sql:$sql,params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          changes=$(jq -r '.result[0].meta.changes // .result[0].changes // 0' <<<"$response")
+          test "$changes" -eq 1
+          check=$(jq -nc --arg id "$ID" '{sql:"SELECT sheet_sync_status FROM leads WHERE submission_id=?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$check")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status' <<<"$response")" = retry
+          echo 'PASS: pending -> retry permitido'
+
+      - name: Limpar QA
+        if: always()
+        shell: bash
+        env:
+          SYNCED: ${{ steps.seed.outputs.synced }}
+          PENDING: ${{ steps.seed.outputs.pending }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          body=$(jq -nc --arg a "$SYNCED" --arg b "$PENDING" '{sql:"DELETE FROM leads WHERE submission_id IN (?,?)",params:[$a,$b]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
