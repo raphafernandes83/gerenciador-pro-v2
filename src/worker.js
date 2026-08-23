@@ -35,6 +35,51 @@ function errorReason(error, fallback = "unknown_error") {
   return clean(error?.message || error, 500) || fallback;
 }
 
+async function sha256Hex(value) {
+  const data = new TextEncoder().encode(String(value || ""));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function enforceRegistrationRateLimits(request, env, interest, phone, email) {
+  if (
+    !env.REGISTRATION_CONTACT_LIMITER ||
+    typeof env.REGISTRATION_CONTACT_LIMITER.limit !== "function" ||
+    !env.REGISTRATION_IP_LIMITER ||
+    typeof env.REGISTRATION_IP_LIMITER.limit !== "function"
+  ) {
+    return { ok: false, error: "rate_limit_unavailable", status: 503 };
+  }
+
+  try {
+    const contactHash = await sha256Hex(`${interest}|${phone}|${email || ""}`);
+    const contact = await env.REGISTRATION_CONTACT_LIMITER.limit({
+      key: `register-contact:${contactHash}`
+    });
+
+    if (!contact?.success) {
+      return { ok: false, error: "too_many_requests", status: 429 };
+    }
+
+    const ip = clean(request.headers.get("CF-Connecting-IP"), 100);
+    if (ip) {
+      const ipResult = await env.REGISTRATION_IP_LIMITER.limit({
+        key: `register-ip:${ip}`
+      });
+      if (!ipResult?.success) {
+        return { ok: false, error: "too_many_requests", status: 429 };
+      }
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("registration_rate_limit_failed", error?.message || error);
+    return { ok: false, error: "rate_limit_unavailable", status: 503 };
+  }
+}
+
 async function readPayload(request) {
   const type = request.headers.get("content-type") || "";
   if (type.includes("application/json")) return await request.json();
@@ -333,6 +378,17 @@ async function register(request, env, ctx) {
     return json({ ok: false, error: "channel_required" }, 422);
   }
 
+  const rateLimit = await enforceRegistrationRateLimits(
+    request,
+    env,
+    interest,
+    whatsappNorm,
+    emailNorm
+  );
+  if (!rateLimit.ok) {
+    return json({ ok: false, error: rateLimit.error }, rateLimit.status);
+  }
+
   const existingSubmission = await env.DB.prepare(
     "SELECT submission_id FROM leads WHERE submission_id = ? LIMIT 1"
   ).bind(submissionId).first();
@@ -404,7 +460,11 @@ async function health(env) {
       ok: row?.ok === 1,
       database: "reachable",
       sheetMirrorConfigured: Boolean(clean(env.SHEETS_MIRROR_URL, 2000)),
-      retryQueueConfigured: Boolean(env.SHEET_RETRY_QUEUE)
+      retryQueueConfigured: Boolean(env.SHEET_RETRY_QUEUE),
+      rateLimitConfigured: Boolean(
+        env.REGISTRATION_CONTACT_LIMITER &&
+        env.REGISTRATION_IP_LIMITER
+      )
     });
   } catch {
     return json({ ok: false, database: "unreachable" }, 503);
