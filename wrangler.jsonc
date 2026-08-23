@@ -1,6 +1,6 @@
 {
   "name": "gerenciador-pro-v2",
-  "main": "src/worker.js",
+  "main": "src/worker-entry.js",
   "compatibility_date": "2026-08-23",
   "workers_dev": true,
   "preview_urls": true,
