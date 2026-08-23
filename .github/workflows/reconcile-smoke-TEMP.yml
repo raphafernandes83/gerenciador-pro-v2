@@ -1,74 +1,13 @@
-name: TEMP D1 Sheets reconciliation smoke
+name: TEMP D1 Sheets reconciliation smoke — completed
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/reconcile-smoke-TEMP.yml"
-      - "scripts/reconcile-sheets.mjs"
-  push:
-    branches: ["infra/cloudflare-foundation"]
-    paths:
-      - ".github/workflows/reconcile-smoke-TEMP.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  smoke:
-    if: github.event_name == 'pull_request'
+  completed:
     runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
-      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
-      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
-      RECONCILE_LIMIT: "10"
-      FAIL_ON_RECONCILE_ERROR: "1"
-      TEST_ID: qa-reconcile-smoke-20260823
-      TEST_EMAIL: qa.reconcile.20260823@example.com
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Preparar registro retry no D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
-          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM lead_lot_allocations WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
-            body=$(jq -nc --arg sql "$sql" --arg id "$TEST_ID" '{sql:$sql,params:[$id]}')
-            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
-          done
-          payload=$(jq -nc --arg id "$TEST_ID" --arg email "$TEST_EMAIL" '{submission_id:$id,tipo_interesse:"comprar",nome:"TESTE RECONCILIAÇÃO — PODE APAGAR",whatsapp:"+5521900000002",email:$email,pais:"Brazil",consentimento:"Sim",origem:"ci-reconcile"}')
-          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
-          params=$(jq -nc --arg id "$TEST_ID" --arg email "$TEST_EMAIL" --arg payload "$payload" '[$id,"comprar","TESTE RECONCILIAÇÃO — PODE APAGAR","+5521900000002","5521900000002",$email,$email,"Brazil",1,"ci-reconcile",$payload]')
-          body=$(jq -nc --arg sql "$sql" --argjson params "$params" '{sql:$sql,params:$params}')
-          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
-
-      - name: Executar reconciliacao
-        run: node scripts/reconcile-sheets.mjs
-
-      - name: Confirmar synced e evento
-        shell: bash
-        run: |
-          set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
-          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          sql="SELECT l.sheet_sync_status,l.sheet_sync_attempts,EXISTS(SELECT 1 FROM system_events e WHERE e.submission_id=l.submission_id AND e.event_type='sheet_reconciled') AS reconciled FROM leads l WHERE l.submission_id=? LIMIT 1"
-          body=$(jq -nc --arg sql "$sql" --arg id "$TEST_ID" '{sql:$sql,params:[$id]}')
-          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
-          jq -e '.success == true and .result[0].results[0].sheet_sync_status == "synced" and .result[0].results[0].sheet_sync_attempts >= 1 and .result[0].results[0].reconciled == 1' <<<"$response" >/dev/null
-          echo "PASS: retry -> Sheets -> synced"
-
-      - name: Limpar D1 de QA
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
-          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM lead_lot_allocations WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
-            body=$(jq -nc --arg sql "$sql" --arg id "$TEST_ID" '{sql:$sql,params:[$id]}')
-            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
-          done
+      - run: echo "One-time reconciliation smoke already completed successfully."
