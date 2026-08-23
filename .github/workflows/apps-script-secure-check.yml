@@ -6,11 +6,13 @@ on:
     paths:
       - ".github/workflows/apps-script-secure-check.yml"
       - "scripts/apps-script/Code.secure.gs"
+      - "scripts/apps-script/appsscript.json"
   push:
     branches: ["infra/cloudflare-foundation"]
     paths:
       - ".github/workflows/apps-script-secure-check.yml"
       - "scripts/apps-script/Code.secure.gs"
+      - "scripts/apps-script/appsscript.json"
   workflow_dispatch:
 
 permissions:
@@ -22,12 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validar sintaxe V8
+      - name: Validar sintaxe V8 e manifest
         shell: bash
         run: |
           set -euo pipefail
           cp scripts/apps-script/Code.secure.gs /tmp/apps-script-secure.js
           node --check /tmp/apps-script-secure.js
+          jq -e '.runtimeVersion == "V8"' scripts/apps-script/appsscript.json >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/spreadsheets") != null' scripts/apps-script/appsscript.json >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null' scripts/apps-script/appsscript.json >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.scriptapp") != null' scripts/apps-script/appsscript.json >/dev/null
 
       - name: Validar gates de seguranca
         shell: bash
@@ -47,4 +53,4 @@ jobs:
           ! grep -F 'HtmlService' "$file" >/dev/null
           ! grep -F 'spreadsheetUrl:' "$file" >/dev/null
           ! grep -F 'spreadsheetId:' "$file" >/dev/null
-          echo "PASS: Apps Script v3 exige capability token, URL por ambiente e não expõe dados internos"
+          echo "PASS: Apps Script v3 exige capability token, URL por ambiente, OAuth explícito e não expõe dados internos"
