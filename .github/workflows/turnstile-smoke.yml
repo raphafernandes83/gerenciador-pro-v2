@@ -23,15 +23,30 @@ jobs:
     env:
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
     steps:
-      - name: Aguardar preview com Turnstile
+      - name: Aguardar preview com Turnstile completo
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 60); do
-            code=$(curl -sS -o /tmp/config.js -w '%{http_code}' "${PREVIEW_URL}/config.js" || true)
-            if [ "$code" = "200" ] && grep -F 'turnstileSitekey' /tmp/config.js >/dev/null; then exit 0; fi
+          missing='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000001","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot"}'
+          invalid='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"INVALID-TOKEN"}'
+          for attempt in $(seq 1 80); do
+            config_code=$(curl -sS -o /tmp/config.js -w '%{http_code}' "${PREVIEW_URL}/config.js" || true)
+            missing_code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$missing" || true)
+            invalid_code=$(curl -sS -o /tmp/invalid.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$invalid" || true)
+            if [ "$config_code" = "200" ] \
+              && grep -F 'turnstileSitekey' /tmp/config.js >/dev/null \
+              && [ "$missing_code" = "403" ] \
+              && jq -e '.error == "turnstile_required"' /tmp/missing.json >/dev/null 2>&1 \
+              && [ "$invalid_code" = "403" ] \
+              && jq -e '.error == "turnstile_invalid"' /tmp/invalid.json >/dev/null 2>&1; then
+              echo "PASS: frontend + Worker Turnstile estabilizados"
+              exit 0
+            fi
+            echo "aguardando preview ${attempt}/80 config=${config_code} missing=${missing_code} invalid=${invalid_code}"
             sleep 3
           done
+          echo "missing:"; cat /tmp/missing.json 2>/dev/null || true
+          echo "invalid:"; cat /tmp/invalid.json 2>/dev/null || true
           exit 1
 
       - name: Sem token deve bloquear
@@ -57,6 +72,13 @@ jobs:
         run: |
           set -euo pipefail
           payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000003","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
-          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
-          jq -e '.ok == true and .ignored == true' <<<"$response" >/dev/null
-          echo "PASS: Turnstile server-side fail-closed no preview"
+          for attempt in $(seq 1 20); do
+            code=$(curl -sS -o /tmp/pass.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .ignored == true' /tmp/pass.json >/dev/null 2>&1; then
+              echo "PASS: Turnstile server-side fail-closed no preview"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/pass.json 2>/dev/null || true
+          exit 1
