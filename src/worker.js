@@ -143,34 +143,53 @@ async function recordSystemEvent(env, eventType, submissionId, details = {}) {
   }
 }
 
+function d1Changed(result) {
+  return Number(result?.meta?.changes ?? result?.changes ?? 0) > 0;
+}
+
 async function markSheetSynced(env, submissionId, details = {}) {
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `UPDATE leads
      SET sheet_sync_status = 'synced',
          sheet_sync_attempts = sheet_sync_attempts + 1,
          sheet_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-     WHERE submission_id = ?`
+     WHERE submission_id = ?
+       AND COALESCE(sheet_sync_status, 'pending') <> 'synced'`
   ).bind(submissionId).run();
 
-  await recordSystemEvent(env, "sheet_sync_succeeded", submissionId, details);
+  if (d1Changed(result)) {
+    await recordSystemEvent(env, "sheet_sync_succeeded", submissionId, details);
+    return true;
+  }
+
+  await recordSystemEvent(env, "sheet_sync_already_synced", submissionId, details);
+  return false;
 }
 
 async function markSheetRetry(env, submissionId, reason, details = {}) {
-  try {
-    await env.DB.prepare(
-      `UPDATE leads
-       SET sheet_sync_status = 'retry',
-           sheet_sync_attempts = sheet_sync_attempts + 1,
-           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-       WHERE submission_id = ?`
-    ).bind(submissionId).run();
-  } finally {
+  const result = await env.DB.prepare(
+    `UPDATE leads
+     SET sheet_sync_status = 'retry',
+         sheet_sync_attempts = sheet_sync_attempts + 1,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE submission_id = ?
+       AND COALESCE(sheet_sync_status, 'pending') <> 'synced'`
+  ).bind(submissionId).run();
+
+  if (d1Changed(result)) {
     await recordSystemEvent(env, "sheet_sync_retry", submissionId, {
       reason,
       ...details
     });
+    return true;
   }
+
+  await recordSystemEvent(env, "sheet_retry_skipped_synced", submissionId, {
+    reason,
+    ...details
+  });
+  return false;
 }
 
 async function enqueueSheetRetry(env, submissionId, reason) {
@@ -202,11 +221,13 @@ async function enqueueSheetRetry(env, submissionId, reason) {
 
 async function scheduleSheetRetry(env, submissionId, reason) {
   try {
-    await markSheetRetry(env, submissionId, reason);
+    const changed = await markSheetRetry(env, submissionId, reason);
+    if (!changed) return false;
   } catch (error) {
     console.error("sheet_retry_status_failed", submissionId, error);
+    return false;
   }
-  await enqueueSheetRetry(env, submissionId, reason);
+  return enqueueSheetRetry(env, submissionId, reason);
 }
 
 async function postLeadToSheet(env, record, payload) {
@@ -321,13 +342,23 @@ async function processRetryMessage(message, env) {
     message.ack();
   } catch (error) {
     const reason = errorReason(error, "sheet_retry_consumer_failed");
+    let shouldRetry = false;
     try {
-      await markSheetRetry(env, submissionId, reason, {
+      shouldRetry = await markSheetRetry(env, submissionId, reason, {
         source: "queue",
         queueAttempts: Number(message?.attempts || 0)
       });
     } catch (statusError) {
       console.error("sheet_consumer_status_failed", submissionId, statusError);
+    }
+
+    if (!shouldRetry) {
+      await recordSystemEvent(env, "sheet_retry_race_resolved_synced", submissionId, {
+        reason,
+        attempts: Number(message?.attempts || 0)
+      });
+      message.ack();
+      return;
     }
 
     await recordSystemEvent(env, "sheet_retry_consumer_failed", submissionId, {
@@ -478,6 +509,7 @@ export default {
     if (url.pathname === "/api/health" && request.method === "GET") return health(env);
     if (url.pathname === "/api/register" && request.method === "POST") return register(request, env, ctx);
     if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
+
     if (env.ASSETS) return env.ASSETS.fetch(request);
     return json({ ok: false, error: "not_found" }, 404);
   },
