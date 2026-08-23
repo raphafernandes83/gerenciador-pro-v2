@@ -79,10 +79,7 @@ jobs:
           response=$(curl --fail-with-body -sS -X POST "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$payload")
           test "$(jq -r '.success // false' <<<"$response")" = "true"
 
-      - name: Consumir mensagem sem lead
-        run: node scripts/pull-sheet-retry-queue.mjs
-
-      - name: Confirmar ack sem criar lead
+      - name: Consumir até confirmar ACK da própria mensagem QA
         shell: bash
         env:
           QA_ID: ${{ steps.qa.outputs.qa_id }}
@@ -91,14 +88,37 @@ jobs:
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
           sql="SELECT (SELECT COUNT(*) FROM leads WHERE submission_id=?) AS leads, (SELECT COUNT(*) FROM system_events WHERE submission_id=? AND event_type='sheet_pull_missing_lead') AS events"
-          body=$(jq -nc --arg sql "$sql" --arg id "$QA_ID" '{sql:$sql,params:[$id,$id]}')
-          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
-          test "$(jq -r '.result[0].results[0].leads // -1' <<<"$response")" = "0"
-          test "$(jq -r '.result[0].results[0].events // 0' <<<"$response")" -ge 1
-          cleanup=$(jq -nc --arg id "$QA_ID" '{sql:"DELETE FROM system_events WHERE submission_id=?",params:[$id]}')
-          curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$cleanup" >/dev/null
+          for attempt in $(seq 1 12); do
+            node scripts/pull-sheet-retry-queue.mjs || true
+            body=$(jq -nc --arg sql "$sql" --arg id "$QA_ID" '{sql:$sql,params:[$id,$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+            leads=$(jq -r '.result[0].results[0].leads // -1' <<<"$response")
+            events=$(jq -r '.result[0].results[0].events // 0' <<<"$response")
+            if [ "$leads" = "0" ] && [ "$events" -ge 1 ]; then
+              cleanup=$(jq -nc --arg id "$QA_ID" '{sql:"DELETE FROM system_events WHERE submission_id=?",params:[$id]}')
+              curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$cleanup" >/dev/null
+              echo "PASS: mensagem QA específica consumida e ACK confirmada na tentativa ${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'FAIL: mensagem QA não foi observada após múltiplos pulls'
+          exit 1
+
+      - name: Verificar se Apps Script está pronto para contingência real
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"queue-smoke-nonexistent"}'
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+          if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$response" >/dev/null 2>&1; then ready=true; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "Apps Script disponível para retry real: ${ready}"
 
       - name: Preparar lead real em retry usando âncora Queue
+        if: steps.apps.outputs.ready == 'true'
         id: retry
         shell: bash
         run: |
@@ -114,6 +134,7 @@ jobs:
           test "$(jq -r '.success // false' <<<"$response")" = "true"
 
       - name: Enfileirar retry real
+        if: steps.apps.outputs.ready == 'true'
         shell: bash
         env:
           SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
@@ -125,9 +146,11 @@ jobs:
           test "$(jq -r '.success // false' <<<"$response")" = "true"
 
       - name: Consumir retry real e sincronizar Sheets
+        if: steps.apps.outputs.ready == 'true'
         run: node scripts/pull-sheet-retry-queue.mjs
 
       - name: Provar retry para synced
+        if: steps.apps.outputs.ready == 'true'
         shell: bash
         env:
           SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
@@ -142,6 +165,11 @@ jobs:
           test "$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")" -ge 1
           test "$(jq -r '.result[0].results[0].sync_events // 0' <<<"$response")" -ge 1
           echo "PASS: D1 retry -> Queue HTTP Pull -> Sheets -> D1 synced"
+
+      - name: Registrar skip consciente do retry real
+        if: steps.apps.outputs.ready != 'true'
+        shell: bash
+        run: echo 'SKIP controlado: Queue/ACK passou; retry real -> Sheets aguarda autorização UrlFetchApp do Apps Script.'
 
       - name: Limpar lead real de QA
         if: always() && steps.retry.outputs.submission_id != ''
