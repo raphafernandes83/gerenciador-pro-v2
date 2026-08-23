@@ -82,3 +82,23 @@ jobs:
           done
           cat /tmp/pass.json 2>/dev/null || true
           exit 1
+
+      - name: Payload acima de 64 KB deve bloquear antes do Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/large.json
+          import json
+          print(json.dumps({
+            "tipo_interesse": "comprar",
+            "nome": "PAYLOAD QA",
+            "whatsapp": "+550000000004",
+            "pais": "Brazil",
+            "consentimento": "Sim",
+            "observacao": "X" * 70000
+          }))
+          PY
+          code=$(curl -sS -o /tmp/large-response.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data-binary @/tmp/large.json)
+          test "$code" = "413"
+          jq -e '.ok == false and .error == "payload_too_large"' /tmp/large-response.json >/dev/null
+          echo "PASS: payload excessivo bloqueado"
