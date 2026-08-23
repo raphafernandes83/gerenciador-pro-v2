@@ -32,26 +32,27 @@ jobs:
           path = Path("script.js")
           text = path.read_text(encoding="utf-8")
 
-          old_config_check = '''  function isConfigured() {
+          if 'function submitToWorker()' not in text:
+              config_pattern = re.compile(
+                  r'  function isConfigured\(\) \{\n.*?\n  \}',
+                  re.S,
+              )
+              new_config_check = '''  function isConfigured() {
             const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
-            return endpoint.startsWith("https://script.google.com/") && endpoint.endsWith("/exec");
+            return endpoint === "/api/register" || /^https?:\/\/[^\s]+\/api\/register(?:[?#].*)?$/.test(endpoint);
           }'''
+              text, count = config_pattern.subn(new_config_check, text, count=1)
+              if count != 1:
+                  raise SystemExit("isConfigured nao encontrado de forma unica.")
 
-          new_config_check = '''  function isConfigured() {
-            const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
-            return endpoint === "/api/register" || /^https?:\\/\\/[^\\s]+\\/api\\/register(?:[?#].*)?$/.test(endpoint);
-          }'''
+              start_marker = "  /**\n   * Envia o formulário para o Apps Script"
+              end_marker = "\n  // --- Listeners"
+              start = text.find(start_marker)
+              end = text.find(end_marker, start)
+              if start < 0 or end < 0:
+                  raise SystemExit("Bloco Apps Script nao encontrado pelos marcadores.")
 
-          if old_config_check not in text:
-            raise SystemExit("Bloco isConfigured original nao encontrado; abortando sem alterar arquivo.")
-          text = text.replace(old_config_check, new_config_check, 1)
-
-          pattern = re.compile(
-            r'  /\\*\\*\\n   \\* Envia o formulário para o Apps Script.*?\\n  function submitThroughConfirmedIframe\\(\\) \\{.*?\\n  \\}\\n\\n  // --- Listeners',
-            re.S,
-          )
-
-          new_transport = '''  /**
+              new_transport = '''  /**
            * Envia o cadastro para o Worker de mesma origem.
            * Sucesso só é exibido depois que o Worker confirma a gravação no D1.
            */
@@ -60,39 +61,30 @@ jobs:
             const submissionId = createSubmissionId();
             const timeoutMs = Math.max(5000, Number(window.GP_FORM_CONFIG?.requestTimeoutMs || 15000));
             const data = Object.fromEntries(new FormData(form).entries());
-
             data.enviado_em_local = new Date().toISOString();
             data.submission_id = submissionId;
 
             const controller = new AbortController();
             const timeoutTimer = window.setTimeout(() => controller.abort(), timeoutMs);
-
             try {
               const response = await fetch(endpoint, {
                 method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Accept": "application/json"
-                },
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify(data),
                 signal: controller.signal
               });
-
               let result;
               try {
                 result = await response.json();
               } catch (error) {
                 throw new Error(T("msg.respostaInvalida", "The server returned an invalid response. Please try again."));
               }
-
               if (!response.ok || !result?.ok) {
                 throw new Error(result?.error || T("msg.naoGravado", "Your registration was not saved."));
               }
-
               if (!result.submissionId && !result.ignored) {
                 throw new Error(T("msg.semConfirmacao", "The server did not confirm the save. Please try again."));
               }
-
               return result;
             } catch (error) {
               if (error?.name === "AbortError") {
@@ -103,28 +95,21 @@ jobs:
               window.clearTimeout(timeoutTimer);
             }
           }
+'''
+              text = text[:start] + new_transport + text[end:]
 
-          // --- Listeners'''
-
-          text, count = pattern.subn(new_transport, text, count=1)
-          if count != 1:
-            raise SystemExit(f"Bloco de transporte original nao encontrado de forma unica: {count}")
-
-          old_call = "const result = await submitThroughConfirmedIframe();"
-          new_call = "const result = await submitToWorker();"
-          if text.count(old_call) != 1:
-            raise SystemExit("Chamada do transporte original nao encontrada de forma unica.")
-          text = text.replace(old_call, new_call, 1)
+              old_call = "const result = await submitThroughConfirmedIframe();"
+              if text.count(old_call) != 1:
+                  raise SystemExit("Chamada antiga nao encontrada de forma unica.")
+              text = text.replace(old_call, "const result = await submitToWorker();", 1)
 
           if "submitThroughConfirmedIframe" in text:
-            raise SystemExit("Referencia antiga ainda presente; abortando.")
-          if "submitToWorker" not in text:
-            raise SystemExit("Novo transporte nao foi inserido; abortando.")
+              raise SystemExit("Referencia antiga ainda presente.")
 
           path.write_text(text, encoding="utf-8")
           Path("config.js").write_text(
-            'window.GP_FORM_CONFIG={endpoint:"/api/register",requestTimeoutMs:15000};\\n',
-            encoding="utf-8",
+              'window.GP_FORM_CONFIG={endpoint:"/api/register",requestTimeoutMs:15000};\n',
+              encoding="utf-8",
           )
 
       - name: Validar JavaScript alterado
@@ -144,6 +129,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add script.js config.js
-          git diff --cached --quiet && { echo "Nada para alterar"; exit 0; }
+          if git diff --cached --quiet; then
+            echo "PASS: nada a alterar"
+            exit 0
+          fi
           git commit -m "api: route capture form through Worker and D1"
           git push origin HEAD:infra/cloudflare-foundation
