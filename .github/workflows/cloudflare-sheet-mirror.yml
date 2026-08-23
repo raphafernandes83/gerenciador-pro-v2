@@ -58,7 +58,7 @@ jobs:
           submission_id="sheet-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           payload=$(jq -n \
             --arg submission_id "$submission_id" \
-            '{submission_id:$submission_id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:"Brazil",consentimento:"Sim",origem:"ci-sheet-mirror"}')
+            '{submission_id:$submission_id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:"Brazil",consentimento:"Sim",origem:"ci-sheet-mirror","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}')
           response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
             -H "Content-Type: application/json" --data "$payload")
           jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
