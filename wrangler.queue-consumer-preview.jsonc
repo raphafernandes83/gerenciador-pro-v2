@@ -1,0 +1,30 @@
+{
+  "name": "gerenciador-pro-sheet-retry-preview",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-23",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "SHEETS_MIRROR_URL": "https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gerenciador-pro-leads",
+      "database_id": "9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "gerenciador-pro-sheet-retry",
+        "max_batch_size": 5,
+        "max_batch_timeout": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "gerenciador-pro-sheet-retry-dlq",
+        "max_concurrency": 1,
+        "retry_delay": 60
+      }
+    ]
+  }
+}
