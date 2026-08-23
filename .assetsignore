@@ -10,6 +10,8 @@ src
 src/**
 migrations
 migrations/**
+scripts
+scripts/**
 .env
 .env.*
 .dev.vars
