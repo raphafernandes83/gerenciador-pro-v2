@@ -1,0 +1,41 @@
+name: Verificar implantação V7
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/verificar-implantacao-v7.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consultar implantação publicada
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec'
+          RESPONSE="$(curl -L --fail --silent --show-error --max-time 60 "${URL}?verificar_v7=$(date +%s)")"
+          printf '%s\n' "$RESPONSE" | tee resposta-v7.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('resposta-v7.json').read_text())
+          assert data.get('ok') is True, data
+          assert data.get('version') == '2026-08-03.1', data
+          assert data.get('spreadsheetId') == '1FIzb3eUkue1MZdR5-Klst_0YVeugm7qfPUz6rFpuB1U', data
+          assert data.get('sheetName') == 'Cadastros', data
+          print('IMPLANTACAO_V7_OK')
+          PY
+
+      - name: Guardar resposta
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verificacao-implantacao-v7-${{ github.run_id }}
+          path: resposta-v7.json
+          if-no-files-found: warn

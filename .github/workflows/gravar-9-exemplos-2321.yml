@@ -1,0 +1,123 @@
+name: Gravar 9 exemplos adicionais
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gravar-9-exemplos-2321.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gravar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ENDPOINT: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - name: Gravar 9 exemplos e medir atualização
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          START_BRT="$(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M:%S BRT')"
+          START_EPOCH="$(date +%s)"
+          UNIQUE="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+
+          echo "Início: $START_BRT" | tee relatorio.txt
+
+          curl -L --fail --silent --show-error --max-time 60 \
+            "$ENDPOINT?teste=before-${UNIQUE}" \
+            -o before.json
+
+          BEFORE="$(python - <<'PY'
+          import json
+          print(json.load(open('before.json'))['totalCadastros'])
+          PY
+          )"
+
+          echo "Contagem inicial: $BEFORE" | tee -a relatorio.txt
+
+          for n in $(seq 1 9); do
+            IDX="$(printf '%02d' "$n")"
+            EMAIL="teste-velocidade-2321-${UNIQUE}-${IDX}@example.com"
+            PHONE="552197$(printf '%06d' $((GITHUB_RUN_ID % 1000000)))${IDX}"
+            POST_BRT="$(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M:%S BRT')"
+            SUBMISSION_ID="teste-velocidade-2321-${UNIQUE}-${IDX}"
+
+            DURATION="$(curl -L --fail --silent --show-error --max-time 60 \
+              "$ENDPOINT" \
+              --data-urlencode "submission_id=$SUBMISSION_ID" \
+              --data-urlencode "tipo_interesse=comprar" \
+              --data-urlencode "nome=TESTE DE VELOCIDADE ${IDX} — PODE APAGAR" \
+              --data-urlencode "whatsapp=$PHONE" \
+              --data-urlencode "email=$EMAIL" \
+              --data-urlencode "pais=Brasil" \
+              --data-urlencode "cidade_estado=Rio de Janeiro — RJ" \
+              --data-urlencode "contato_preferido=WhatsApp" \
+              --data-urlencode "experiencia_trading=Teste de velocidade" \
+              --data-urlencode "principal_objetivo=Medir tempo de gravação" \
+              --data-urlencode "observacao=POSTADO EM $POST_BRT — TESTE AUTOMÁTICO, PODE APAGAR" \
+              --data-urlencode "consentimento=Sim" \
+              --data-urlencode "origem=teste-chatgpt-23h21" \
+              --data-urlencode "pagina_url=https://raphafernandes83.github.io/gerenciador-pro-v2/#cadastro" \
+              --data-urlencode "enviado_em_local=$POST_BRT" \
+              --data-urlencode "user_agent=GitHub Actions — teste de 10 exemplos" \
+              -w '%{time_total}' \
+              -o "resposta-${IDX}.json")"
+
+            python - "$IDX" <<'PY'
+          import json, sys
+          idx = sys.argv[1]
+          data = json.load(open(f'resposta-{idx}.json'))
+          assert data.get('ok') is True, data
+          assert data.get('duplicate') is False, data
+          PY
+
+            echo "Exemplo ${IDX}: enviado em $POST_BRT — resposta em ${DURATION}s" | tee -a relatorio.txt
+          done
+
+          EXPECTED=$((BEFORE + 9))
+          REACHED_AT=""
+
+          for attempt in $(seq 0 30); do
+            curl -L --fail --silent --show-error --max-time 60 \
+              "$ENDPOINT?teste=after-${UNIQUE}-${attempt}" \
+              -o after.json
+
+            AFTER="$(python - <<'PY'
+          import json
+          print(json.load(open('after.json'))['totalCadastros'])
+          PY
+          )"
+
+            if [ "$AFTER" -eq "$EXPECTED" ]; then
+              REACHED_AT="$(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M:%S BRT')"
+              break
+            fi
+
+            sleep 1
+          done
+
+          END_EPOCH="$(date +%s)"
+          ELAPSED=$((END_EPOCH - START_EPOCH))
+
+          echo "Contagem final: $AFTER" | tee -a relatorio.txt
+          echo "Contagem esperada: $EXPECTED" | tee -a relatorio.txt
+          echo "Contagem confirmada em: $REACHED_AT" | tee -a relatorio.txt
+          echo "Tempo total do lote: ${ELAPSED}s" | tee -a relatorio.txt
+
+          test "$AFTER" -eq "$EXPECTED"
+
+      - name: Guardar relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-9-exemplos-${{ github.run_id }}
+          path: |
+            relatorio.txt
+            before.json
+            after.json
+            resposta-*.json
+          if-no-files-found: warn
