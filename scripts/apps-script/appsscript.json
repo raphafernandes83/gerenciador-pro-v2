@@ -6,5 +6,9 @@
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/script.scriptapp"
+  ],
+  "urlFetchWhitelist": [
+    "https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize",
+    "https://gerenciador-pro-v2.animaisfofinhos1983.workers.dev/api/mirror/authorize"
   ]
 }
