@@ -1,6 +1,10 @@
 import baseWorker from "./worker.js";
 import { allocateRegistrationLot, getLotStatus } from "./lots.js";
 
+const PREVIEW_HOST = "infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev";
+const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
+const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -11,21 +15,91 @@ function json(data, status = 200) {
   });
 }
 
+async function readRegistrationPayload(request) {
+  const type = request.headers.get("content-type") || "";
+  if (type.includes("application/json")) return await request.json();
+  if (type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data")) {
+    const form = await request.formData();
+    return Object.fromEntries(form.entries());
+  }
+  return {};
+}
+
 async function readRegistrationMarket(request) {
   try {
-    const type = request.headers.get("content-type") || "";
-    if (type.includes("application/json")) {
-      const body = await request.json();
-      return String(body?.pais || "").trim();
-    }
-    if (type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data")) {
-      const form = await request.formData();
-      return String(form.get("pais") || "").trim();
-    }
+    const body = await readRegistrationPayload(request);
+    return String(body?.pais || "").trim();
   } catch (error) {
     console.error("lot_market_read_failed", error);
   }
   return "";
+}
+
+function turnstileSecretFor(request, env) {
+  const configured = String(env.TURNSTILE_SECRET_KEY || "").trim();
+  if (configured) return configured;
+
+  const host = new URL(request.url).hostname;
+  if (host === PREVIEW_HOST) return TURNSTILE_TEST_SECRET;
+  return "";
+}
+
+async function validateTurnstile(request, env) {
+  const secret = turnstileSecretFor(request, env);
+  if (!secret) return { ok: false, error: "turnstile_not_configured", status: 503 };
+
+  let payload;
+  try {
+    payload = await readRegistrationPayload(request.clone());
+  } catch {
+    return { ok: false, error: "turnstile_invalid_request", status: 400 };
+  }
+
+  const token = String(payload?.["cf-turnstile-response"] || "").trim();
+  if (!token) return { ok: false, error: "turnstile_required", status: 403 };
+  if (token.length > 2048) return { ok: false, error: "turnstile_invalid", status: 403 };
+
+  const form = new FormData();
+  form.append("secret", secret);
+  form.append("response", token);
+
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (ip) form.append("remoteip", ip);
+  form.append("idempotency_key", crypto.randomUUID());
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(TURNSTILE_SITEVERIFY, {
+      method: "POST",
+      body: form,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      console.error("turnstile_siteverify_http", response.status);
+      return { ok: false, error: "turnstile_unavailable", status: 503 };
+    }
+
+    const result = await response.json();
+    if (result?.success !== true) {
+      console.warn("turnstile_rejected", result?.["error-codes"] || []);
+      return { ok: false, error: "turnstile_invalid", status: 403 };
+    }
+
+    const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || "").trim();
+    if (expectedAction && result?.action !== expectedAction) {
+      return { ok: false, error: "turnstile_invalid", status: 403 };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("turnstile_siteverify_failed", error?.name || error);
+    return { ok: false, error: "turnstile_unavailable", status: 503 };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export default {
@@ -46,9 +120,15 @@ export default {
     }
 
     if (url.pathname === "/api/register" && request.method === "POST") {
+      const securityRequest = request.clone();
       const marketRequest = request.clone();
-      const response = await baseWorker.fetch(request, env, ctx);
 
+      const security = await validateTurnstile(securityRequest, env);
+      if (!security.ok) {
+        return json({ ok: false, error: security.error }, security.status);
+      }
+
+      const response = await baseWorker.fetch(request, env, ctx);
       if (!response.ok) return response;
 
       let result;
