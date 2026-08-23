@@ -4,6 +4,9 @@
   "compatibility_date": "2026-08-23",
   "workers_dev": true,
   "preview_urls": true,
+  "vars": {
+    "SHEETS_MIRROR_URL": "https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec"
+  },
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
