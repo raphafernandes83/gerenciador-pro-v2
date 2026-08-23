@@ -1,3 +1,4 @@
+# trigger: post-auth reconciliation proof
 name: D1 Sheets reconciliation
 
 on:
