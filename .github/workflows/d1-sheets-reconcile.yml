@@ -22,6 +22,7 @@ concurrency:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   reconcile:
@@ -117,3 +118,19 @@ jobs:
             response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
             test "$(jq -r '.success // false' <<<"$response")" = true
           done
+
+      - name: Publicar status auditável da reconciliação
+        if: success() && github.event_name == 'push'
+        shell: bash
+        env:
+          GH_STATUS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          payload='{"state":"success","context":"d1-sheets-reconciliation-proof","description":"retry -> synced confirmado e QA limpo"}'
+          curl --fail-with-body -sS -X POST \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -H "Authorization: Bearer ${GH_STATUS_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data "$payload" >/dev/null
+          echo 'PASS: status auditável publicado'
