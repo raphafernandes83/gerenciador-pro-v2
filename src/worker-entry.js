@@ -2,7 +2,8 @@ import baseWorker from "./worker.js";
 import { allocateRegistrationLot, getLotStatus } from "./lots.js";
 
 const PREVIEW_HOST = "infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev";
-const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
+const TURNSTILE_TEST_PASS_SECRET = "1x0000000000000000000000000000000AA";
+const TURNSTILE_TEST_FAIL_SECRET = "2x0000000000000000000000000000000AA";
 const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 function json(data, status = 200) {
@@ -40,7 +41,12 @@ function turnstileSecretFor(request, env) {
   if (configured) return configured;
 
   const host = new URL(request.url).hostname;
-  if (host === PREVIEW_HOST) return TURNSTILE_TEST_SECRET;
+  if (host === PREVIEW_HOST) {
+    if (request.headers.get("X-GP-Turnstile-Test") === "force-fail") {
+      return TURNSTILE_TEST_FAIL_SECRET;
+    }
+    return TURNSTILE_TEST_PASS_SECRET;
+  }
   return "";
 }
 
