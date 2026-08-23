@@ -1,10 +1,6 @@
 name: Rate limit behavior smoke
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/rate-limit-smoke.yml"
   workflow_dispatch:
 
 concurrency:
