@@ -49,16 +49,25 @@ jobs:
           echo "failed=$(jq -r '.failed // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
           echo "oldest_retry=$(jq -r '.oldest_retry_minutes // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
 
-      - name: Consultar Queue
+      - name: Consultar Queue e consumer
         id: queue
         shell: bash
         run: |
           set -euo pipefail
-          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}/metrics"
-          response=$(curl --fail-with-body -sS "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-          test "$(jq -r '.success // false' <<<"$response")" = "true"
-          backlog=$(jq -r '.result.backlog_count // 0' <<<"$response")
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          metrics=$(curl --fail-with-body -sS "${base}/metrics" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$metrics")" = "true"
+          backlog=$(jq -r '.result.backlog_count // 0' <<<"$metrics")
           echo "backlog=$backlog" >> "$GITHUB_OUTPUT"
+
+          consumers=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$consumers")" = "true"
+          count=$(jq -r '.result | length' <<<"$consumers")
+          type=$(jq -r '.result[0].type // "none"' <<<"$consumers")
+          echo "consumer_count=$count" >> "$GITHUB_OUTPUT"
+          echo "consumer_type=$type" >> "$GITHUB_OUTPUT"
 
       - name: Resumo operacional
         shell: bash
@@ -70,6 +79,8 @@ jobs:
           FAILED: ${{ steps.d1.outputs.failed }}
           OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
           QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+          CONSUMER_COUNT: ${{ steps.queue.outputs.consumer_count }}
+          CONSUMER_TYPE: ${{ steps.queue.outputs.consumer_type }}
         run: |
           {
             echo "## Gerenciador PRO — saúde operacional"
@@ -83,6 +94,8 @@ jobs:
             echo "| Sheets failed | ${FAILED} |"
             echo "| Retry mais antigo | ${OLDEST_RETRY} min |"
             echo "| Queue backlog | ${QUEUE_BACKLOG} |"
+            echo "| Queue consumers | ${CONSUMER_COUNT} |"
+            echo "| Queue consumer type | ${CONSUMER_TYPE} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Aplicar limites de alerta
@@ -92,6 +105,8 @@ jobs:
           FAILED: ${{ steps.d1.outputs.failed }}
           OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
           QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+          CONSUMER_COUNT: ${{ steps.queue.outputs.consumer_count }}
+          CONSUMER_TYPE: ${{ steps.queue.outputs.consumer_type }}
         run: |
           set -euo pipefail
           alert=0
@@ -99,5 +114,6 @@ jobs:
           if [ "${RETRY}" -ge "${RETRY_ALERT_COUNT}" ]; then echo "ALERTA: retries=${RETRY}"; alert=1; fi
           if [ "${RETRY}" -gt 0 ] && [ "${OLDEST_RETRY}" -ge "${RETRY_AGE_MINUTES}" ]; then echo "ALERTA: retry mais antigo=${OLDEST_RETRY}min"; alert=1; fi
           if [ "${QUEUE_BACKLOG}" -ge "${QUEUE_BACKLOG_ALERT}" ]; then echo "ALERTA: queue backlog=${QUEUE_BACKLOG}"; alert=1; fi
+          if [ "${CONSUMER_COUNT}" -ne 1 ] || [ "${CONSUMER_TYPE}" != "http_pull" ]; then echo "ALERTA: Queue consumer inesperado count=${CONSUMER_COUNT} type=${CONSUMER_TYPE}"; alert=1; fi
           if [ "$alert" -ne 0 ]; then exit 1; fi
           echo "PASS: saúde operacional dentro dos limites"
