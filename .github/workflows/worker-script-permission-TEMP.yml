@@ -1,0 +1,43 @@
+name: TEMP Workers Scripts permission
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/worker-script-permission-TEMP.yml"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/worker-script-permission-TEMP.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      SCRIPT: gerenciador-pro-v2
+    steps:
+      - name: Verificar endpoint Workers Scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for path in \
+            "workers/scripts/${SCRIPT}/settings" \
+            "workers/scripts/${SCRIPT}"; do
+            code=$(curl -sS -o /tmp/cf.json -w '%{http_code}' "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/${path}" -H "$auth" || true)
+            echo "endpoint=${path} http=${code}"
+            if [ "$code" = "200" ]; then
+              jq -e '.success == true' /tmp/cf.json >/dev/null
+              echo "PASS: Workers Scripts API autorizado"
+              exit 0
+            fi
+            jq -c '{success,errors}' /tmp/cf.json 2>/dev/null || true
+          done
+          echo "FAIL: Workers Scripts API sem autorizacao"
+          exit 1
