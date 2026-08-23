@@ -15,6 +15,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   health:
@@ -25,9 +26,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
       RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      DLQ_QUEUE_NAME: gerenciador-pro-sheet-retry-dlq
       RETRY_ALERT_COUNT: "100"
       RETRY_AGE_MINUTES: "30"
       QUEUE_BACKLOG_ALERT: "500"
+      DLQ_BACKLOG_ALERT: "1"
     steps:
       - name: Consultar D1 sem dados pessoais
         id: d1
@@ -49,25 +52,62 @@ jobs:
           echo "failed=$(jq -r '.failed // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
           echo "oldest_retry=$(jq -r '.oldest_retry_minutes // 0' <<<"$row")" >> "$GITHUB_OUTPUT"
 
-      - name: Consultar Queue e consumer
+      - name: Consultar Retry Queue, consumer e DLQ
         id: queue
         shell: bash
         run: |
           set -euo pipefail
-          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}"
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
 
-          metrics=$(curl --fail-with-body -sS "${base}/metrics" -H "$auth")
+          metrics=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/metrics" -H "$auth")
           test "$(jq -r '.success // false' <<<"$metrics")" = "true"
-          backlog=$(jq -r '.result.backlog_count // 0' <<<"$metrics")
-          echo "backlog=$backlog" >> "$GITHUB_OUTPUT"
+          echo "backlog=$(jq -r '.result.backlog_count // 0' <<<"$metrics")" >> "$GITHUB_OUTPUT"
 
-          consumers=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
+          consumers=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/consumers" -H "$auth")
           test "$(jq -r '.success // false' <<<"$consumers")" = "true"
-          count=$(jq -r '.result | length' <<<"$consumers")
-          type=$(jq -r '.result[0].type // "none"' <<<"$consumers")
-          echo "consumer_count=$count" >> "$GITHUB_OUTPUT"
-          echo "consumer_type=$type" >> "$GITHUB_OUTPUT"
+          echo "consumer_count=$(jq -r '.result | length' <<<"$consumers")" >> "$GITHUB_OUTPUT"
+          echo "consumer_type=$(jq -r '.result[0].type // "none"' <<<"$consumers")" >> "$GITHUB_OUTPUT"
+
+          queues=$(curl --fail-with-body -sS "$base" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$queues")" = "true"
+          dlq_id=$(jq -r --arg name "$DLQ_QUEUE_NAME" '.result[] | select(.queue_name == $name) | .queue_id' <<<"$queues" | head -n1)
+          test -n "$dlq_id"
+          dlq_metrics=$(curl --fail-with-body -sS "${base}/${dlq_id}/metrics" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$dlq_metrics")" = "true"
+          echo "dlq_backlog=$(jq -r '.result.backlog_count // 0' <<<"$dlq_metrics")" >> "$GITHUB_OUTPUT"
+
+      - name: Avaliar limites de alerta
+        id: alert
+        shell: bash
+        env:
+          RETRY: ${{ steps.d1.outputs.retry }}
+          FAILED: ${{ steps.d1.outputs.failed }}
+          OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
+          QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+          DLQ_BACKLOG: ${{ steps.queue.outputs.dlq_backlog }}
+          CONSUMER_COUNT: ${{ steps.queue.outputs.consumer_count }}
+          CONSUMER_TYPE: ${{ steps.queue.outputs.consumer_type }}
+        run: |
+          set -euo pipefail
+          reasons=()
+          if [ "${FAILED}" -gt 0 ]; then reasons+=("failed=${FAILED}"); fi
+          if [ "${RETRY}" -ge "${RETRY_ALERT_COUNT}" ]; then reasons+=("retry=${RETRY}"); fi
+          if [ "${RETRY}" -gt 0 ] && [ "${OLDEST_RETRY}" -ge "${RETRY_AGE_MINUTES}" ]; then reasons+=("oldest_retry=${OLDEST_RETRY}min"); fi
+          if [ "${QUEUE_BACKLOG}" -ge "${QUEUE_BACKLOG_ALERT}" ]; then reasons+=("queue_backlog=${QUEUE_BACKLOG}"); fi
+          if [ "${DLQ_BACKLOG}" -ge "${DLQ_BACKLOG_ALERT}" ]; then reasons+=("dlq_backlog=${DLQ_BACKLOG}"); fi
+          if [ "${CONSUMER_COUNT}" -ne 1 ] || [ "${CONSUMER_TYPE}" != "http_pull" ]; then reasons+=("consumer=${CONSUMER_COUNT}/${CONSUMER_TYPE}"); fi
+
+          if [ "${#reasons[@]}" -gt 0 ]; then
+            joined=$(IFS=', '; echo "${reasons[*]}")
+            echo "alert=true" >> "$GITHUB_OUTPUT"
+            echo "reason=${joined}" >> "$GITHUB_OUTPUT"
+            echo "ALERTA: ${joined}"
+          else
+            echo "alert=false" >> "$GITHUB_OUTPUT"
+            echo "reason=healthy" >> "$GITHUB_OUTPUT"
+            echo "PASS: saúde operacional dentro dos limites"
+          fi
 
       - name: Resumo operacional
         shell: bash
@@ -79,8 +119,10 @@ jobs:
           FAILED: ${{ steps.d1.outputs.failed }}
           OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
           QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
+          DLQ_BACKLOG: ${{ steps.queue.outputs.dlq_backlog }}
           CONSUMER_COUNT: ${{ steps.queue.outputs.consumer_count }}
           CONSUMER_TYPE: ${{ steps.queue.outputs.consumer_type }}
+          ALERT: ${{ steps.alert.outputs.alert }}
         run: |
           {
             echo "## Gerenciador PRO — saúde operacional"
@@ -94,26 +136,44 @@ jobs:
             echo "| Sheets failed | ${FAILED} |"
             echo "| Retry mais antigo | ${OLDEST_RETRY} min |"
             echo "| Queue backlog | ${QUEUE_BACKLOG} |"
+            echo "| DLQ backlog | ${DLQ_BACKLOG} |"
             echo "| Queue consumers | ${CONSUMER_COUNT} |"
             echo "| Queue consumer type | ${CONSUMER_TYPE} |"
+            echo "| Alerta | ${ALERT} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Aplicar limites de alerta
+      - name: Abrir ou fechar incidente operacional
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         shell: bash
         env:
-          RETRY: ${{ steps.d1.outputs.retry }}
-          FAILED: ${{ steps.d1.outputs.failed }}
-          OLDEST_RETRY: ${{ steps.d1.outputs.oldest_retry }}
-          QUEUE_BACKLOG: ${{ steps.queue.outputs.backlog }}
-          CONSUMER_COUNT: ${{ steps.queue.outputs.consumer_count }}
-          CONSUMER_TYPE: ${{ steps.queue.outputs.consumer_type }}
+          GH_TOKEN: ${{ github.token }}
+          ALERT: ${{ steps.alert.outputs.alert }}
+          REASON: ${{ steps.alert.outputs.reason }}
         run: |
           set -euo pipefail
-          alert=0
-          if [ "${FAILED}" -gt 0 ]; then echo "ALERTA: leads em estado failed=${FAILED}"; alert=1; fi
-          if [ "${RETRY}" -ge "${RETRY_ALERT_COUNT}" ]; then echo "ALERTA: retries=${RETRY}"; alert=1; fi
-          if [ "${RETRY}" -gt 0 ] && [ "${OLDEST_RETRY}" -ge "${RETRY_AGE_MINUTES}" ]; then echo "ALERTA: retry mais antigo=${OLDEST_RETRY}min"; alert=1; fi
-          if [ "${QUEUE_BACKLOG}" -ge "${QUEUE_BACKLOG_ALERT}" ]; then echo "ALERTA: queue backlog=${QUEUE_BACKLOG}"; alert=1; fi
-          if [ "${CONSUMER_COUNT}" -ne 1 ] || [ "${CONSUMER_TYPE}" != "http_pull" ]; then echo "ALERTA: Queue consumer inesperado count=${CONSUMER_COUNT} type=${CONSUMER_TYPE}"; alert=1; fi
-          if [ "$alert" -ne 0 ]; then exit 1; fi
-          echo "PASS: saúde operacional dentro dos limites"
+          title='[OPS] Alerta infraestrutura de captação'
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${title} in:title" --json number,title --jq 'map(select(.title == "[OPS] Alerta infraestrutura de captação"))[0].number // empty')
+
+          if [ "$ALERT" = "true" ]; then
+            body="Monitor automático detectou condição fora dos limites.\n\nRazão: ${REASON}\n\nNão há dados pessoais neste incidente. Consulte o run do workflow Operational health monitor para as contagens."
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label "operations" 2>/dev/null || gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body 'Saúde operacional voltou aos limites esperados. Fechamento automático.'
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+      - name: Gate de saúde
+        shell: bash
+        env:
+          ALERT: ${{ steps.alert.outputs.alert }}
+          REASON: ${{ steps.alert.outputs.reason }}
+        run: |
+          if [ "$ALERT" = "true" ]; then
+            echo "FAIL: ${REASON}"
+            exit 1
+          fi
+          echo "PASS: saúde operacional"
