@@ -32,9 +32,13 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
       DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
       TEST_EMAIL: teste.gerenciador.pro.20260819@example.com
     steps:
+      - uses: actions/checkout@v4
+
       - name: Aguardar endpoint de lotes
         shell: bash
         env:
@@ -120,7 +124,7 @@ jobs:
           jq -e '.result[0].results[0].lead_count == 1 and .result[0].results[0].allocation_count == 1 and .result[0].results[0].claimed == 1' <<<"$response" >/dev/null
           echo 'PASS: lote validado independentemente do espelho Google'
 
-      - name: Limpar teste
+      - name: Limpar teste e retry órfão
         if: always()
         shell: bash
         env:
@@ -138,3 +142,16 @@ jobs:
           fi
           body=$(jq -nc --arg market "$MARKET" '{sql:"DELETE FROM registration_lots WHERE market_key = ?",params:[$market]}')
           curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body" >/dev/null
+
+          retry_body='{"sql":"SELECT COUNT(*) AS retry FROM leads WHERE sheet_sync_status = '\''retry'\''","params":[]}'
+          retry_response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$retry_body")
+          retry=$(jq -r '.result[0].results[0].retry // -1' <<<"$retry_response")
+          if [ "$retry" -eq 0 ]; then
+            for attempt in $(seq 1 6); do
+              node scripts/pull-sheet-retry-queue.mjs || true
+              sleep 1
+            done
+            echo 'PASS: fixture removido e retries órfãos processados pelo consumidor normal'
+          else
+            echo "INFO: existem ${retry} leads em retry; Queue preservada"
+          fi
