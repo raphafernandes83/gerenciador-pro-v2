@@ -1,0 +1,201 @@
+name: Cloudflare Sheets mirror
+# final gate evidence: D1 to Apps Script to Sheets
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-sheet-mirror.yml"
+      - "scripts/reconcile-sheets.mjs"
+      - "src/worker.js"
+      - "wrangler.jsonc"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-sheet-mirror.yml"
+      - "scripts/reconcile-sheets.mjs"
+      - "src/worker.js"
+      - "wrangler.jsonc"
+  workflow_dispatch:
+
+concurrency:
+  group: gp-shared-sheets-test-contact
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      TEST_EMAIL: teste.gerenciador.pro.20260819@example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Aguardar preview com espelho configurado
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 48); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            if [ "$code" = "200" ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true' /tmp/health.json >/dev/null 2>&1; then
+              echo "PASS: preview com D1 + Sheets mirror configurado"
+              exit 0
+            fi
+            echo "Aguardando preview (${attempt}/48)"
+            sleep 5
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1
+
+      - name: Verificar conectividade real do Apps Script
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"mirror-smoke-nonexistent"}'
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+          if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$response" >/dev/null 2>&1; then ready=true; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "Apps Script disponível para espelhamento real: ${ready}"
+
+      - name: Gravar cadastro sintetico no D1
+        if: steps.apps.outputs.ready == 'true'
+        id: register
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="sheet-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload=$(jq -n \
+            --arg submission_id "$submission_id" \
+            '{submission_id:$submission_id,tipo_interesse:"comprar",nome:"TESTE CHATGPT — PODE APAGAR",whatsapp:"+5521900000000",email:"teste.gerenciador.pro.20260819@example.com",pais:"Brazil",consentimento:"Sim",origem:"ci-sheet-mirror","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}')
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/register" \
+            -H "Content-Type: application/json" --data "$payload")
+          jq -e --arg id "$submission_id" '.ok == true and .duplicate == false and .submissionId == $id' <<<"$response" >/dev/null
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: D1 confirmou cadastro"
+
+      - name: Confirmar espelho no Sheets pelo status do D1
+        if: steps.apps.outputs.ready == 'true'
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          query_d1() {
+            local sql="$1"
+            local id="$2"
+            local body
+            body=$(jq -n --arg sql "$sql" --arg id "$id" '{sql:$sql,params:[$id]}')
+            curl --fail-with-body -sS -X POST "$api" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" --data "$body"
+          }
+          for attempt in $(seq 1 20); do
+            response=$(query_d1 'SELECT sheet_sync_status, sheet_sync_attempts, sheet_synced_at FROM leads WHERE submission_id = ? LIMIT 1' "$SUBMISSION_ID")
+            status=$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")
+            attempts=$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")
+            echo "Tentativa ${attempt}: status=${status}, attempts=${attempts}"
+            if [ "$status" = "synced" ] && [ "$attempts" -ge 1 ]; then
+              echo "PASS: D1 -> Apps Script -> Google Sheets confirmado"
+              exit 0
+            fi
+            if [ "$status" = "retry" ]; then
+              event=$(query_d1 "SELECT details_json FROM system_events WHERE submission_id = ? AND event_type = 'sheet_sync_retry' ORDER BY id DESC LIMIT 1" "$SUBMISSION_ID")
+              reason=$(jq -r '.result[0].results[0].details_json // "{}" | fromjson? | .reason // "unknown"' <<<"$event")
+              echo "FAIL: Sheets mirror retornou retry; reason=${reason}"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "FAIL: espelho nao confirmou a tempo"
+          exit 1
+
+      - name: Limpar cadastro direto antes da prova de reconciliação
+        if: steps.apps.outputs.ready == 'true' && steps.register.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.register.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
+            payload=$(jq -n --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+            curl --fail-with-body -sS -X POST "$api" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" --data "$payload" >/dev/null
+          done
+
+      - name: Preparar fixture retry para reconciliador
+        if: steps.apps.outputs.ready == 'true'
+        id: reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          submission_id="reconcile-proof-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "submission_id=$submission_id" >> "$GITHUB_OUTPUT"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
+          payload_json='{"tipo_interesse":"comprar","nome":"TESTE CHATGPT — PODE APAGAR","whatsapp":"+5521900000000","email":"teste.gerenciador.pro.20260819@example.com","pais":"Brazil","consentimento":"Sim","origem":"reconcile-proof"}'
+          body=$(jq -nc --arg sql "$sql" --arg id "$submission_id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","TESTE CHATGPT — PODE APAGAR","+5521900000000","5521900000000","teste.gerenciador.pro.20260819@example.com","teste.gerenciador.pro.20260819@example.com","Brazil",1,"reconcile-proof",$payload]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+
+      - name: Executar reconciliador isolado
+        if: steps.apps.outputs.ready == 'true'
+        env:
+          RECONCILE_SUBMISSION_ID: ${{ steps.reconcile.outputs.submission_id }}
+          FAIL_ON_RECONCILE_ERROR: "1"
+        run: node scripts/reconcile-sheets.mjs
+
+      - name: Provar retry para synced via reconciliador
+        if: steps.apps.outputs.ready == 'true'
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.reconcile.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          body=$(jq -nc --arg id "$SUBMISSION_ID" '{sql:"SELECT sheet_sync_status,sheet_sync_attempts FROM leads WHERE submission_id=? LIMIT 1",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")" = synced
+          test "$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")" -ge 1
+          echo 'PASS: D1 retry -> reconciliador -> Apps Script -> Sheets -> D1 synced'
+
+      - name: Registrar skip consciente
+        if: steps.apps.outputs.ready != 'true'
+        shell: bash
+        run: |
+          echo 'SKIP controlado: Apps Script v3 está publicado, mas UrlFetchApp ainda precisa de autorização; nenhum lead de QA foi criado.'
+
+      - name: Limpar fixtures sinteticos do D1
+        if: always()
+        shell: bash
+        env:
+          DIRECT_ID: ${{ steps.register.outputs.submission_id }}
+          RECONCILE_ID: ${{ steps.reconcile.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          for id in "${DIRECT_ID:-}" "${RECONCILE_ID:-}"; do
+            [ -n "$id" ] || continue
+            for sql in "DELETE FROM system_events WHERE submission_id = ?" "DELETE FROM leads WHERE submission_id = ?"; do
+              payload=$(jq -n --arg sql "$sql" --arg id "$id" '{sql:$sql,params:[$id]}')
+              response=$(curl --fail-with-body -sS -X POST "$api" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" --data "$payload")
+              jq -e '.success == true' <<<"$response" >/dev/null
+            done
+          done
+          echo "PASS: fixtures sinteticos removidos do D1"

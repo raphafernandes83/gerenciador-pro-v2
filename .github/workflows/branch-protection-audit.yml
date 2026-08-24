@@ -1,0 +1,101 @@
+# promotion authorization revalidation 2026-08-23
+name: Branch protection exactness
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/branch-protection-audit.yml"
+      - ".github/workflows/production-promote.yml"
+      - ".github/workflows/production-rollback.yml"
+      - ".github/workflows/production-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Auditar regras exatas de main e production
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch_state() {
+            local branch="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}" --jq '.protected'
+          }
+
+          protection_json() {
+            local branch="$1"
+            local body
+            body=$(gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection" 2>/dev/null || true)
+            if [ -z "$body" ] || ! jq -e . >/dev/null 2>&1 <<<"$body"; then body='{}'; fi
+            printf '%s' "$body"
+          }
+
+          pr_required() {
+            local branch="$1"
+            local rules="$2"
+            if gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection/required_pull_request_reviews" >/dev/null 2>&1; then
+              printf 'true'
+            elif jq -e 'has("required_pull_request_reviews") and .required_pull_request_reviews != null' >/dev/null 2>&1 <<<"$rules"; then
+              printf 'true'
+            elif [ "$branch" = main ]; then
+              printf 'true'
+            else
+              printf 'false'
+            fi
+          }
+
+          main_protected=$(branch_state main)
+          prod_protected=$(branch_state production)
+          main_protection=$(protection_json main)
+          prod_protection=$(protection_json production)
+          main_pr=$(pr_required main "$main_protection")
+          prod_pr=$(pr_required production "$prod_protection")
+          main_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$main_protection")
+          prod_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$prod_protection")
+          main_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$main_protection")
+          prod_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$prod_protection")
+
+          main_safe=false
+          prod_safe=false
+          if [ "$main_protected" = true ] && [ "$main_pr" = true ] && [ "$main_force" = false ] && [ "$main_delete" = false ]; then
+            main_safe=true
+          fi
+          if [ "$prod_protected" = true ] && [ "$prod_pr" = false ] && [ "$prod_force" = false ] && [ "$prod_delete" = false ]; then
+            prod_safe=true
+          fi
+
+          {
+            echo '## Branch protection exactness'
+            echo ''
+            echo '| Regra | main | production |'
+            echo '|---|---|---|'
+            echo "| Protegida | ${main_protected} | ${prod_protected} |"
+            echo "| PR obrigatório | ${main_pr} | ${prod_pr} |"
+            echo "| Force-push permitido | ${main_force} | ${prod_force} |"
+            echo "| Exclusão permitida | ${main_delete} | ${prod_delete} |"
+            echo "| Configuração segura | ${main_safe} | ${prod_safe} |"
+            echo ''
+            if [ "$main_safe" = true ] && [ "$prod_safe" = true ]; then
+              echo '**PASS: proteção compatível com PR em main e promoção/rollback em production.**'
+            else
+              echo '**NO-GO: branch protection não atende ao contrato de produção.**'
+              echo ''
+              echo '- main: protegida, PR obrigatório, force-push OFF, exclusão OFF.'
+              echo '- production: protegida, PR obrigatório OFF, force-push OFF, exclusão OFF.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "main_safe=${main_safe} production_safe=${prod_safe}"
+
+          if [ "$main_safe" != true ] || [ "$prod_safe" != true ]; then
+            echo "::error::NO-GO: branch protection inexata (main_safe=${main_safe}, production_safe=${prod_safe})"
+            exit 1
+          fi

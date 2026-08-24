@@ -1,0 +1,104 @@
+name: Turnstile smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/turnstile-smoke.yml"
+      - "src/worker-entry.js"
+      - "config.js"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/turnstile-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Aguardar preview com Turnstile completo
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000001","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot"}'
+          fail='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          for attempt in $(seq 1 80); do
+            config_code=$(curl -sS -o /tmp/config.js -w '%{http_code}' "${PREVIEW_URL}/config.js" || true)
+            missing_code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$missing" || true)
+            fail_code=$(curl -sS -o /tmp/fail.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" -H "X-GP-Turnstile-Test: force-fail" --data "$fail" || true)
+            if [ "$config_code" = "200" ] \
+              && grep -F 'turnstileSitekey' /tmp/config.js >/dev/null \
+              && [ "$missing_code" = "403" ] \
+              && jq -e '.error == "turnstile_required"' /tmp/missing.json >/dev/null 2>&1 \
+              && [ "$fail_code" = "403" ] \
+              && jq -e '.error == "turnstile_invalid"' /tmp/fail.json >/dev/null 2>&1; then
+              echo "PASS: frontend + Worker Turnstile estabilizados"
+              exit 0
+            fi
+            echo "aguardando preview ${attempt}/80 config=${config_code} missing=${missing_code} forced_fail=${fail_code}"
+            sleep 3
+          done
+          echo "missing:"; cat /tmp/missing.json 2>/dev/null || true
+          echo "forced fail:"; cat /tmp/fail.json 2>/dev/null || true
+          exit 1
+
+      - name: Sem token deve bloquear
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000001","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot"}'
+          code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "turnstile_required"' /tmp/missing.json >/dev/null
+
+      - name: Rejeicao do Siteverify deve bloquear
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000002","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          code=$(curl -sS -o /tmp/fail.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" -H "X-GP-Turnstile-Test: force-fail" --data "$payload")
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "turnstile_invalid"' /tmp/fail.json >/dev/null
+
+      - name: Token oficial de teste deve passar
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"tipo_interesse":"comprar","nome":"TURNSTILE QA","whatsapp":"+550000000003","pais":"Brazil","consentimento":"Sim","website":"qa-honeypot","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          for attempt in $(seq 1 20); do
+            code=$(curl -sS -o /tmp/pass.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data "$payload" || true)
+            if [ "$code" = "200" ] && jq -e '.ok == true and .ignored == true' /tmp/pass.json >/dev/null 2>&1; then
+              echo "PASS: Turnstile server-side fail-closed no preview"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/pass.json 2>/dev/null || true
+          exit 1
+
+      - name: Payload acima de 64 KB deve bloquear antes do Turnstile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/large.json
+          import json
+          print(json.dumps({
+            "tipo_interesse": "comprar",
+            "nome": "PAYLOAD QA",
+            "whatsapp": "+550000000004",
+            "pais": "Brazil",
+            "consentimento": "Sim",
+            "observacao": "X" * 70000
+          }))
+          PY
+          code=$(curl -sS -o /tmp/large-response.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/register" -H "Content-Type: application/json" --data-binary @/tmp/large.json)
+          test "$code" = "413"
+          jq -e '.ok == false and .error == "payload_too_large"' /tmp/large-response.json >/dev/null
+          echo "PASS: payload excessivo bloqueado"

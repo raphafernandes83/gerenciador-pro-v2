@@ -1,0 +1,119 @@
+name: Production domain readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: 'URL final, ex.: https://app.exemplo.com'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  domain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PRODUCTION_URL: ${{ inputs.production_url }}
+      TURNSTILE_TEST_SITEKEY: 1x00000000000000000000AA
+      PREVIEW_HOST: infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Validar hostname de produção
+        id: host
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PRODUCTION_URL" in https://*) ;; *) echo 'FAIL: URL precisa usar HTTPS'; exit 1 ;; esac
+          host=$(python - <<'PY'
+          import os, urllib.parse
+          u=urllib.parse.urlparse(os.environ['PRODUCTION_URL'])
+          print(u.hostname or '')
+          PY
+          )
+          test -n "$host"
+          [[ "$host" == *.* ]] || { echo 'FAIL: hostname precisa ser FQDN'; exit 1; }
+          [[ "$host" != *.workers.dev ]] || { echo 'FAIL: workers.dev não é domínio final de produção'; exit 1; }
+          [ "$host" != "$PREVIEW_HOST" ] || { echo 'FAIL: preview não pode ser produção'; exit 1; }
+          if [[ "$host" =~ ^[0-9.]+$ ]] || [[ "$host" == *:* ]]; then echo 'FAIL: use domínio, não IP'; exit 1; fi
+          echo "hostname=$host" >> "$GITHUB_OUTPUT"
+
+      - name: Validar DNS público
+        shell: bash
+        env:
+          HOSTNAME_FINAL: ${{ steps.host.outputs.hostname }}
+        run: |
+          set -euo pipefail
+          getent ahosts "$HOSTNAME_FINAL" | tee /tmp/dns.txt
+          test -s /tmp/dns.txt
+          echo 'PASS: hostname resolve publicamente'
+
+      - name: Validar TLS e certificado
+        shell: bash
+        env:
+          HOSTNAME_FINAL: ${{ steps.host.outputs.hostname }}
+        run: |
+          set -euo pipefail
+          timeout 20 openssl s_client -connect "${HOSTNAME_FINAL}:443" -servername "$HOSTNAME_FINAL" -verify_return_error -verify_hostname "$HOSTNAME_FINAL" < /dev/null > /tmp/tls.txt 2>&1
+          grep -F 'Verify return code: 0 (ok)' /tmp/tls.txt >/dev/null
+          timeout 20 bash -c "openssl s_client -connect '${HOSTNAME_FINAL}:443' -servername '${HOSTNAME_FINAL}' < /dev/null 2>/dev/null | openssl x509 -checkend 604800 -noout"
+          echo 'PASS: TLS válido para o hostname e certificado válido por mais de 7 dias'
+
+      - name: Validar Worker, headers e sitekey real
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${PRODUCTION_URL%/}"
+          health_code=$(curl -sS --max-time 15 -o /tmp/health.json -w '%{http_code}' "${base}/api/health" || true)
+          test "$health_code" = 200
+          jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null
+          curl -sS --max-time 15 -D /tmp/headers.txt -o /dev/null "${base}/"
+          grep -qi '^content-security-policy:' /tmp/headers.txt
+          grep -qi '^strict-transport-security:' /tmp/headers.txt
+          grep -qi '^x-content-type-options: nosniff' /tmp/headers.txt
+          grep -qi '^x-frame-options: DENY' /tmp/headers.txt
+          config=$(curl -sS --max-time 15 "${base}/config.js")
+          sitekey=$(sed -n 's/^[[:space:]]*const configuredSitekey = "\([^"]*\)";[[:space:]]*$/\1/p' <<<"$config" | head -n1)
+          test -n "$sitekey"
+          test "$sitekey" != "$TURNSTILE_TEST_SITEKEY"
+          ! grep -F '__GP_TURNSTILE_SITEKEY__' <<<"$config" >/dev/null
+          echo 'PASS: Worker saudável, headers seguros e sitekey real injetada'
+
+      - name: Validar Turnstile fail-closed e isolamento de origem
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${PRODUCTION_URL%/}"
+          missing='{"tipo_interesse":"comprar","nome":"DOMAIN READINESS","whatsapp":"+5521999999999","email":"domain-readiness@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+          code=$(curl -sS --max-time 15 -o /tmp/missing.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$missing" || true)
+          test "$code" = 403
+          jq -e '.error == "turnstile_required"' /tmp/missing.json >/dev/null
+
+          dummy='{"tipo_interesse":"comprar","nome":"DOMAIN READINESS","whatsapp":"+5521999999999","email":"domain-readiness@example.invalid","pais":"Brazil","consentimento":"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+          code=$(curl -sS --max-time 15 -o /tmp/dummy.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$dummy" || true)
+          test "$code" = 403
+          jq -e '.error == "turnstile_invalid"' /tmp/dummy.json >/dev/null
+
+          code=$(curl -sS --max-time 15 -o /tmp/cross.json -w '%{http_code}' -X POST "${base}/api/register" -H 'Origin: https://evil.example' -H 'Content-Type: application/json' --data "$missing" || true)
+          test "$code" = 403
+          jq -e '.error == "origin_not_allowed"' /tmp/cross.json >/dev/null
+          echo 'PASS: Turnstile real fail-closed e cross-origin bloqueado'
+
+      - name: Resultado
+        shell: bash
+        run: |
+          {
+            echo '## Production domain readiness'
+            echo
+            echo '- ✅ FQDN customizado (não workers.dev)'
+            echo '- ✅ DNS público'
+            echo '- ✅ TLS/hostname/certificado'
+            echo '- ✅ Worker health + headers'
+            echo '- ✅ sitekey Turnstile real'
+            echo '- ✅ token ausente e dummy bloqueados'
+            echo '- ✅ cross-origin bloqueado'
+            echo
+            echo '**PASS — domínio apto para o Production readiness final.**'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -328,7 +328,7 @@
 
   function isConfigured() {
     const endpoint = window.GP_FORM_CONFIG?.endpoint || "";
-    return endpoint.startsWith("https://script.google.com/") && endpoint.endsWith("/exec");
+    return endpoint === "/api/register" || endpoint.endsWith("/api/register");
   }
 
   function createSubmissionId() {
@@ -337,101 +337,49 @@
   }
 
   /**
-   * Envia o formulário para o Apps Script em um iframe oculto.
-   * A página só considera sucesso quando recebe o postMessage real do backend.
-   * O simples carregamento do iframe nunca mais é tratado como confirmação.
-   *
-   * NÃO MODIFICADA em relação à versão original: preserva nomes de campos,
-   * UTM, origem, pagina_url, user_agent, submission_id, honeypot e a
-   * confirmação real vinda do backend via postMessage.
+   * Envia o cadastro para o Worker de mesma origem.
+   * Sucesso só é exibido depois que o Worker confirma a gravação no D1.
    */
-  function submitThroughConfirmedIframe() {
-    return new Promise((resolve, reject) => {
-      const endpoint = window.GP_FORM_CONFIG.endpoint;
-      const submissionId = createSubmissionId();
-      const frameName = `gp-lead-frame-${submissionId}`;
-      const timeoutMs = Math.max(
-        45000,
-        Number(window.GP_FORM_CONFIG.requestTimeoutMs || 15000) + 30000
-      );
+  async function submitToWorker() {
+    const endpoint = window.GP_FORM_CONFIG?.endpoint || "/api/register";
+    const submissionId = createSubmissionId();
+    const timeoutMs = Math.max(5000, Number(window.GP_FORM_CONFIG?.requestTimeoutMs || 15000));
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.enviado_em_local = new Date().toISOString();
+    data.submission_id = submissionId;
 
-      const iframe = document.createElement("iframe");
-      iframe.name = frameName;
-      iframe.title = T("msg.confirmacao", "Registration confirmation");
-      iframe.hidden = true;
-      iframe.srcdoc = "<!doctype html><html><body></body></html>";
+    const controller = new AbortController();
+    const timeoutTimer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(data),
+        signal: controller.signal
+      });
 
-      const relayForm = document.createElement("form");
-      relayForm.method = "POST";
-      relayForm.action = `${endpoint}?v=${Date.now()}`;
-      relayForm.target = frameName;
-      relayForm.hidden = true;
-
-      const data = new FormData(form);
-      data.append("enviado_em_local", new Date().toISOString());
-      data.append("submission_id", submissionId);
-      data.append("response_mode", "iframe");
-
-      for (const [name, value] of data.entries()) {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = name;
-        input.value = String(value);
-        relayForm.appendChild(input);
+      let result;
+      try {
+        result = await response.json();
+      } catch (error) {
+        throw new Error(T("msg.respostaInvalida", "The server returned an invalid response. Please try again."));
       }
 
-      let completed = false;
-      let submitted = false;
-
-      const cleanup = () => {
-        window.removeEventListener("message", onMessage);
-        iframe.removeEventListener("load", onFrameLoad);
-        window.clearTimeout(timeoutTimer);
-        relayForm.remove();
-        window.setTimeout(() => iframe.remove(), 250);
-      };
-
-      const finish = (callback) => {
-        if (completed) return;
-        completed = true;
-        cleanup();
-        callback();
-      };
-
-      const onMessage = (event) => {
-        const result = event.data;
-        if (!result || result.type !== "gp-lead-result") return;
-        if (result.submissionId !== submissionId) return;
-
-        if (result.ok) {
-          finish(() => resolve(result));
-          return;
-        }
-
-        finish(() => reject(new Error(result.error || T("msg.naoGravado", "Your registration was not saved."))));
-      };
-
-      const onFrameLoad = () => {
-        if (submitted) return;
-        submitted = true;
-        document.body.appendChild(relayForm);
-        relayForm.submit();
-      };
-
-      const timeoutTimer = window.setTimeout(() => {
-        finish(() =>
-          reject(
-            new Error(
-              T("msg.semConfirmacao", "The spreadsheet did not confirm the save. Wait a few seconds and try again.")
-            )
-          )
-        );
-      }, timeoutMs);
-
-      window.addEventListener("message", onMessage);
-      iframe.addEventListener("load", onFrameLoad);
-      document.body.appendChild(iframe);
-    });
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || T("msg.naoGravado", "Your registration was not saved."));
+      }
+      if (!result.submissionId && !result.ignored) {
+        throw new Error(T("msg.semConfirmacao", "The server did not confirm the save. Please try again."));
+      }
+      return result;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error(T("msg.semConfirmacao", "The server did not confirm the save in time. Please try again."));
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutTimer);
+    }
   }
 
   // --- Listeners ----------------------------------------------------------
@@ -511,7 +459,7 @@
     submitButtonLabel.textContent = T("msg.enviando", "Sending registration…");
 
     try {
-      const result = await submitThroughConfirmedIframe();
+      const result = await submitToWorker();
 
       form.hidden = true;
       interestTabs.hidden = true;

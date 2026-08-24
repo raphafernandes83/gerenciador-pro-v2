@@ -1,0 +1,53 @@
+name: Queue stale QA drain
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Exigir zero leads em retry antes de drenar
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          body='{"sql":"SELECT COUNT(*) AS retry FROM leads WHERE sheet_sync_status = '\''retry'\''","params":[]}'
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+          retry=$(jq -r '.result[0].results[0].retry // -1' <<<"$response")
+          test "$retry" -eq 0 || { echo "NO-GO: existem ${retry} leads reais/QA em retry; nada foi drenado"; exit 1; }
+          echo 'PASS: D1 sem leads em retry; mensagens atuais são órfãs e podem ser ACKadas pelo consumidor normal'
+
+      - name: Consumir mensagens órfãs pelo caminho normal
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 8); do
+            node scripts/pull-sheet-retry-queue.mjs
+            sleep 1
+          done
+
+      - name: Confirmar fila vazia
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}/metrics"
+          for attempt in $(seq 1 10); do
+            response=$(curl --fail-with-body -sS "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+            backlog=$(jq -r '.result.backlog_count // -1' <<<"$response")
+            if [ "$backlog" -eq 0 ]; then echo 'PASS: Retry Queue vazia'; exit 0; fi
+            sleep 2
+          done
+          echo "FAIL: backlog residual=${backlog}"
+          exit 1

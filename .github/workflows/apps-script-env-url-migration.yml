@@ -1,0 +1,14 @@
+name: Apps Script environment URL migration (archived)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archived:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Estado
+        run: echo 'Migração concluída; workflow arquivado sem permissão de escrita.'

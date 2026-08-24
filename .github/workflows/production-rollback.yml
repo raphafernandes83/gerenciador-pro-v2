@@ -1,0 +1,59 @@
+name: Rollback production
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'SHA conhecido e aprovado para restaurar'
+        required: true
+        type: string
+      confirm:
+        description: 'Digite ROLLBACK para confirmar'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Exigir confirmação explícita
+        shell: bash
+        run: test '${{ inputs.confirm }}' = 'ROLLBACK'
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: production
+
+      - name: Validar SHA e restaurar árvore sem force-push
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin production main
+          git cat-file -e "${TARGET}^{commit}"
+          if ! git merge-base --is-ancestor "$TARGET" origin/main && ! git merge-base --is-ancestor "$TARGET" origin/production; then
+            echo 'FAIL: target não pertence ao histórico conhecido de main/production'
+            exit 1
+          fi
+
+          current=$(git rev-parse origin/production)
+          git checkout -B production origin/production
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git read-tree --reset -u "$TARGET"
+          git commit -m "Rollback production para ${TARGET}" || {
+            echo 'Árvore já corresponde ao target; nada a fazer.'
+            exit 0
+          }
+          git push origin HEAD:production
+          echo "PASS: production restaurada da árvore ${TARGET}; origem anterior ${current}"

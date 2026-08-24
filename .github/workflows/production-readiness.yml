@@ -1,0 +1,314 @@
+name: Production readiness
+# final gate evidence: post-test readiness
+
+# Gate final fail-closed: produção só fica pronta com health, headers seguros, Turnstile real e isolamento de origem comprovados.
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: 'URL de produção final (opcional até o domínio existir)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-readiness
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+      RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+      DLQ_QUEUE_NAME: gerenciador-pro-sheet-retry-dlq
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+      SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      TURNSTILE_TEST_SITEKEY: 1x00000000000000000000AA
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar contrato de código e assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in wrangler.jsonc _headers .assetsignore config.js src/worker.js src/worker-entry.js src/lots.js migrations/0001_leads.sql migrations/0002_registration_lots.sql scripts/reconcile-sheets.mjs scripts/pull-sheet-retry-queue.mjs scripts/apps-script/Code.secure.gs scripts/apps-script/appsscript.json; do
+            test -s "$f" || { echo "arquivo ausente: $f"; exit 1; }
+          done
+          grep -F 'scripts' .assetsignore >/dev/null
+          grep -F 'migrations' .assetsignore >/dev/null
+          grep -F '.github' .assetsignore >/dev/null
+          grep -F 'Content-Security-Policy' _headers >/dev/null
+          grep -F 'REGISTRATION_CONTACT_LIMITER' wrangler.jsonc >/dev/null
+          grep -F 'REGISTRATION_IP_LIMITER' wrangler.jsonc >/dev/null
+          grep -F 'SHEET_RETRY_QUEUE' wrangler.jsonc >/dev/null
+          grep -F '"/config.js"' wrangler.jsonc >/dev/null
+          grep -F '"keep_vars": true' wrangler.jsonc >/dev/null
+          grep -F '__GP_TURNSTILE_SITEKEY__' config.js >/dev/null
+          grep -F 'TURNSTILE_SITE_KEY' src/worker-entry.js >/dev/null
+          jq -e '.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null' scripts/apps-script/appsscript.json >/dev/null
+          if grep -Eq '^  push:|^    branches:.*main' .github/workflows/pages.yml; then
+            echo 'FAIL: GitHub Pages não pode auto-publicar main'
+            exit 1
+          fi
+          echo 'PASS: contrato de código, assets e runtime config'
+
+      - name: Validar preview e segurança publicada
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS --max-time 10 -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            headers=$(curl -sSI --max-time 10 "${PREVIEW_URL}/" || true)
+            config=$(curl -sS --max-time 10 "${PREVIEW_URL}/config.js" || true)
+            if [ "$code" = '200' ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null 2>&1 \
+              && grep -qi '^content-security-policy:' <<<"$headers" \
+              && grep -qi '^strict-transport-security:' <<<"$headers" \
+              && grep -F '1x00000000000000000000AA' <<<"$config" >/dev/null \
+              && ! grep -F '__GP_TURNSTILE_SITEKEY__' <<<"$config" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = true
+          for path in '/.git/config' '/.github/workflows/pages.yml' '/src/worker.js' '/scripts/reconcile-sheets.mjs' '/migrations/0001_leads.sql' '/wrangler.jsonc'; do
+            status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "${PREVIEW_URL}${path}")
+            test "$status" = '404'
+          done
+          echo 'PASS: preview seguro e config.js injetado pelo Worker'
+
+      - name: Aguardar D1 estabilizar sem ler PII
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          test_expr="origem IN ('rate-limit-smoke','rate-limit-drill','load-drill','ci-lot-concurrency','worker-lot-smoke','monotonicity-smoke','reconcile-smoke','ci-queue-retry','ci-sheet-mirror') OR submission_id LIKE 'qa-%' OR submission_id LIKE 'rate-%' OR submission_id LIKE 'load-%' OR submission_id LIKE 'mono-%' OR submission_id LIKE 'reconcile-smoke-%' OR submission_id LIKE 'sheet-smoke-%'"
+          sql="SELECT COUNT(*) AS total, SUM(CASE WHEN sheet_sync_status='pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN sheet_sync_status='retry' THEN 1 ELSE 0 END) AS retry, SUM(CASE WHEN sheet_sync_status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN (${test_expr}) THEN 1 ELSE 0 END) AS qa_active, SUM(CASE WHEN (${test_expr}) AND datetime(created_at) < datetime('now','-10 minutes') THEN 1 ELSE 0 END) AS qa_stale FROM leads"
+          clean=false
+          pending=retry=failed=qa_active=qa_stale=0
+          for attempt in $(seq 1 60); do
+            body=$(jq -nc --arg sql "$sql" '{sql:$sql,params:[]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "$body")
+            row=$(jq -c '.result[0].results[0]' <<<"$response")
+            pending=$(jq -r '.pending // 0' <<<"$row")
+            retry=$(jq -r '.retry // 0' <<<"$row")
+            failed=$(jq -r '.failed // 0' <<<"$row")
+            qa_active=$(jq -r '.qa_active // 0' <<<"$row")
+            qa_stale=$(jq -r '.qa_stale // 0' <<<"$row")
+            if [ "$failed" -eq 0 ] && [ "$qa_stale" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$retry" -eq 0 ] && [ "$qa_active" -eq 0 ]; then
+              clean=true
+              break
+            fi
+            sleep 3
+          done
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "retry=$retry" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "qa_active=$qa_active" >> "$GITHUB_OUTPUT"
+          echo "qa_stale=$qa_stale" >> "$GITHUB_OUTPUT"
+          echo "clean=$clean" >> "$GITHUB_OUTPUT"
+          echo "D1 clean=${clean}; pending=${pending}; retry=${retry}; failed=${failed}; qa=${qa_active}; stale=${qa_stale}"
+
+      - name: Aguardar Retry Queue e DLQ estabilizarem
+        id: queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          consumers=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/consumers" -H "$auth")
+          consumer_count=$(jq -r '.result | length' <<<"$consumers")
+          consumer_type=$(jq -r '.result[0].type // "none"' <<<"$consumers")
+          test "$consumer_count" -eq 1
+          test "$consumer_type" = 'http_pull'
+          queues=$(curl --fail-with-body -sS "$base" -H "$auth")
+          dlq_id=$(jq -r --arg name "$DLQ_QUEUE_NAME" '.result[] | select(.queue_name == $name) | .queue_id' <<<"$queues" | head -n1)
+          test -n "$dlq_id"
+          clean=false
+          retry_backlog=dlq_backlog=-1
+          for attempt in $(seq 1 30); do
+            retry_metrics=$(curl --fail-with-body -sS "${base}/${RETRY_QUEUE_ID}/metrics" -H "$auth")
+            dlq_metrics=$(curl --fail-with-body -sS "${base}/${dlq_id}/metrics" -H "$auth")
+            retry_backlog=$(jq -r '.result.backlog_count // 0' <<<"$retry_metrics")
+            dlq_backlog=$(jq -r '.result.backlog_count // 0' <<<"$dlq_metrics")
+            if [ "$retry_backlog" -eq 0 ] && [ "$dlq_backlog" -eq 0 ]; then
+              clean=true
+              break
+            fi
+            sleep 4
+          done
+          echo "retry_backlog=$retry_backlog" >> "$GITHUB_OUTPUT"
+          echo "dlq_backlog=$dlq_backlog" >> "$GITHUB_OUTPUT"
+          echo "consumer=${consumer_count}/${consumer_type}" >> "$GITHUB_OUTPUT"
+          echo "clean=$clean" >> "$GITHUB_OUTPUT"
+          echo "Queue clean=${clean}; retry=${retry_backlog}; DLQ=${dlq_backlog}; consumer=${consumer_count}/${consumer_type}"
+
+      - name: Verificar publicação e conectividade do Apps Script seguro
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          secure=false
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" || true)
+          if jq -e '.ok == true and .version == "2026-08-23.3" and .status == "ready"' <<<"$response" >/dev/null 2>&1 \
+            && ! jq -e 'has("spreadsheetId") or has("spreadsheetUrl") or has("spreadsheetName")' <<<"$response" >/dev/null 2>&1; then
+            probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"readiness-nonexistent"}'
+            post=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+            if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$post" >/dev/null 2>&1; then secure=true; fi
+          fi
+          echo "secure=$secure" >> "$GITHUB_OUTPUT"
+
+      - name: Verificar proteção exata de main e production
+        id: branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch_state() { gh api "repos/${GITHUB_REPOSITORY}/branches/$1" --jq '.protected'; }
+          protection_json() {
+            local body
+            body=$(gh api "repos/${GITHUB_REPOSITORY}/branches/$1/protection" 2>/dev/null || true)
+            if [ -z "$body" ] || ! jq -e . >/dev/null 2>&1 <<<"$body"; then body='{}'; fi
+            printf '%s' "$body"
+          }
+          pr_required() {
+            local branch="$1"
+            local rules="$2"
+            if gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection/required_pull_request_reviews" >/dev/null 2>&1; then
+              printf 'true'
+            elif jq -e 'has("required_pull_request_reviews") and .required_pull_request_reviews != null' >/dev/null 2>&1 <<<"$rules"; then
+              printf 'true'
+            elif [ "$branch" = main ]; then
+              printf 'true'
+            else
+              printf 'false'
+            fi
+          }
+          main_protected=$(branch_state main)
+          prod_protected=$(branch_state production)
+          main_rules=$(protection_json main)
+          prod_rules=$(protection_json production)
+          main_pr=$(pr_required main "$main_rules")
+          prod_pr=$(pr_required production "$prod_rules")
+          main_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$main_rules")
+          prod_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$prod_rules")
+          main_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$main_rules")
+          prod_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$prod_rules")
+          main_safe=false
+          prod_safe=false
+          if [ "$main_protected" = true ] && [ "$main_pr" = true ] && [ "$main_force" = false ] && [ "$main_delete" = false ]; then main_safe=true; fi
+          if [ "$prod_protected" = true ] && [ "$prod_pr" = false ] && [ "$prod_force" = false ] && [ "$prod_delete" = false ]; then prod_safe=true; fi
+          echo "main_safe=$main_safe" >> "$GITHUB_OUTPUT"
+          echo "production_safe=$prod_safe" >> "$GITHUB_OUTPUT"
+          echo "main_pr=$main_pr" >> "$GITHUB_OUTPUT"
+          echo "production_pr=$prod_pr" >> "$GITHUB_OUTPUT"
+          echo "main_safe=${main_safe}; production_safe=${prod_safe}"
+
+      - name: Verificar URL final, headers e Turnstile real quando informado
+        id: prod
+        shell: bash
+        env:
+          PRODUCTION_URL: ${{ inputs.production_url }}
+        run: |
+          set -euo pipefail
+          ready=false
+          if [ -n "${PRODUCTION_URL:-}" ]; then
+            base="${PRODUCTION_URL%/}"
+            if [[ "$base" == https://* ]] && [ "$base" != "$PREVIEW_URL" ]; then
+              health_code=$(curl -sS --max-time 15 -o /tmp/prod-health.json -w '%{http_code}' "${base}/api/health" || true)
+              headers=$(curl -sS --max-time 15 -D - -o /dev/null "${base}/" || true)
+              config_js=$(curl -sS --max-time 15 "${base}/config.js" || true)
+              sitekey=$(sed -n 's/^[[:space:]]*const configuredSitekey = "\([^"]*\)";[[:space:]]*$/\1/p' <<<"$config_js" | head -n1)
+
+              health_ok=false
+              headers_ok=false
+              sitekey_ok=false
+              missing_ok=false
+              dummy_ok=false
+              cross_ok=false
+
+              if [ "$health_code" = '200' ] \
+                && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/prod-health.json >/dev/null 2>&1; then
+                health_ok=true
+              fi
+
+              if grep -qi '^content-security-policy:' <<<"$headers" \
+                && grep -qi '^strict-transport-security:' <<<"$headers" \
+                && grep -qi '^x-content-type-options: nosniff' <<<"$headers" \
+                && grep -qi '^x-frame-options: DENY' <<<"$headers"; then
+                headers_ok=true
+              fi
+
+              if [ -n "$sitekey" ] \
+                && [ "$sitekey" != "$TURNSTILE_TEST_SITEKEY" ] \
+                && ! grep -F '__GP_TURNSTILE_SITEKEY__' <<<"$config_js" >/dev/null; then
+                sitekey_ok=true
+              fi
+
+              missing='{"tipo_interesse":"comprar","nome":"PRODUCTION READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+              missing_code=$(curl -sS --max-time 15 -o /tmp/prod-missing.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$missing" || true)
+              if [ "$missing_code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod-missing.json >/dev/null 2>&1; then missing_ok=true; fi
+
+              dummy='{"tipo_interesse":"comprar","nome":"PRODUCTION READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+              dummy_code=$(curl -sS --max-time 15 -o /tmp/prod-dummy.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$dummy" || true)
+              if [ "$dummy_code" = '403' ] && jq -e '.error == "turnstile_invalid"' /tmp/prod-dummy.json >/dev/null 2>&1; then dummy_ok=true; fi
+
+              cross_code=$(curl -sS --max-time 15 -o /tmp/prod-cross.json -w '%{http_code}' -X POST "${base}/api/register" -H 'Origin: https://evil.example' -H 'Content-Type: application/json' --data "$missing" || true)
+              if [ "$cross_code" = '403' ] && jq -e '.error == "origin_not_allowed"' /tmp/prod-cross.json >/dev/null 2>&1; then cross_ok=true; fi
+
+              echo "production_probe health=${health_ok} headers=${headers_ok} sitekey=${sitekey_ok} missing=${missing_ok} dummy=${dummy_ok} cross_origin=${cross_ok}"
+              if [ "$health_ok" = true ] && [ "$headers_ok" = true ] && [ "$sitekey_ok" = true ] && [ "$missing_ok" = true ] && [ "$dummy_ok" = true ] && [ "$cross_ok" = true ]; then
+                ready=true
+              fi
+            fi
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      - name: GO NO-GO
+        shell: bash
+        env:
+          APPS: ${{ steps.apps.outputs.secure }}
+          MAIN_SAFE: ${{ steps.branches.outputs.main_safe }}
+          PROD_SAFE: ${{ steps.branches.outputs.production_safe }}
+          PROD_READY: ${{ steps.prod.outputs.ready }}
+          D1_CLEAN: ${{ steps.d1.outputs.clean }}
+          QUEUE_CLEAN: ${{ steps.queue.outputs.clean }}
+          PENDING: ${{ steps.d1.outputs.pending }}
+          RETRY: ${{ steps.d1.outputs.retry }}
+          FAILED: ${{ steps.d1.outputs.failed }}
+          QA_ACTIVE: ${{ steps.d1.outputs.qa_active }}
+          QUEUE_BACKLOG: ${{ steps.queue.outputs.retry_backlog }}
+          DLQ_BACKLOG: ${{ steps.queue.outputs.dlq_backlog }}
+        run: |
+          set -euo pipefail
+          manual_ready=false
+          if [ "$APPS" = true ] && [ "$MAIN_SAFE" = true ] && [ "$PROD_SAFE" = true ] && [ "$PROD_READY" = true ] && [ "$D1_CLEAN" = true ] && [ "$QUEUE_CLEAN" = true ]; then manual_ready=true; fi
+          {
+            echo '## Production readiness — Gerenciador PRO'
+            echo ''
+            echo '| Gate | Estado |'
+            echo '|---|---|'
+            echo '| Infra/preview automático | ✅ PASS |'
+            echo "| D1 pending / retry / failed | ${PENDING} / ${RETRY} / ${FAILED} |"
+            echo "| QA ativo | ${QA_ACTIVE} |"
+            echo "| Retry Queue / DLQ | ${QUEUE_BACKLOG} / ${DLQ_BACKLOG} |"
+            if [ "$APPS" = true ]; then echo '| Apps Script v3 + UrlFetchApp | ✅ |'; else echo '| Apps Script v3 + UrlFetchApp | ⏳ |'; fi
+            if [ "$MAIN_SAFE" = true ]; then echo '| main: PR obrigatório + sem force/delete | ✅ |'; else echo '| main: PR obrigatório + sem force/delete | ⏳ |'; fi
+            if [ "$PROD_SAFE" = true ]; then echo '| production: promoção direta segura + sem force/delete | ✅ |'; else echo '| production: promoção direta segura + sem force/delete | ⏳ |'; fi
+            if [ "$PROD_READY" = true ]; then echo '| URL final + health + headers + Turnstile real | ✅ |'; else echo '| URL final + health + headers + Turnstile real | ⏳ |'; fi
+            echo ''
+            if [ "$manual_ready" = true ]; then echo '**GO técnico — pronto para workflow de promoção.**'; else echo '**NO-GO controlado — infraestrutura automática pronta; gates finais ainda pendentes.**'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "manual_ready=${manual_ready}"

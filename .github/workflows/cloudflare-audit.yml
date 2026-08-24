@@ -1,0 +1,84 @@
+name: Cloudflare audit
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cloudflare-audit.yml"
+      - "migrations/**"
+      - "src/**"
+      - "wrangler.jsonc"
+      - "script.js"
+      - "config.js"
+  push:
+    branches:
+      - "infra/cloudflare-foundation"
+    paths:
+      - ".github/workflows/cloudflare-audit.yml"
+      - "migrations/**"
+      - "src/**"
+      - "wrangler.jsonc"
+      - "script.js"
+      - "config.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      BOOTSTRAP_BUILD_UUID: 69fbbd6b-de5d-4e22-b0e5-168641be3394
+    steps:
+      - name: Auditar token e branch control
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          verify=$(curl --fail-with-body -sS "https://api.cloudflare.com/client/v4/user/tokens/verify" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          test "$(jq -r '.success // false' <<<"$verify")" = "true"
+
+          build=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/builds/${BOOTSTRAP_BUILD_UUID}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          tag=$(jq -r '.result.trigger.external_script_id // empty' <<<"$build")
+          test -n "$tag"
+
+          triggers=$(curl --fail-with-body -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/builds/workers/${tag}/triggers" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          prod_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler deploy") | .branch_includes] | any(. == ["production"])' <<<"$triggers")
+          preview_ok=$(jq -r '[.result[] | select(.deploy_command == "npx wrangler versions upload") | .branch_excludes] | any(. == ["production"])' <<<"$triggers")
+          test "$prod_ok" = "true"
+          test "$preview_ok" = "true"
+          echo "PASS: Cloudflare + branch control"
+
+  preview:
+    if: github.event_name == 'pull_request'
+    needs: audit
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+    steps:
+      - name: Validar preview sem alterar dados
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${PREVIEW_URL}/api/health" || true)
+            config=$(curl -sS "${PREVIEW_URL}/config.js" || true)
+            if [ "$code" = "200" ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/health.json >/dev/null 2>&1 \
+              && grep -F '/api/register' <<<"$config" >/dev/null \
+              && grep -F 'turnstileSitekey' <<<"$config" >/dev/null; then
+              echo "PASS: preview + D1 + Sheets + Queue + Turnstile + rate limit"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "FAIL: preview nao estabilizou"
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1

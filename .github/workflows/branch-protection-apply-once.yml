@@ -1,0 +1,13 @@
+name: Branch protection apply once (disabled)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Workflow temporário desativado. O token do GitHub Actions não possui Administration: write; use Branch protection exactness para auditoria.'

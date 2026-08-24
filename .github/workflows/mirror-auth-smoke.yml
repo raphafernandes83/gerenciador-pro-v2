@@ -1,0 +1,183 @@
+name: Sheets mirror authorization smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/mirror-auth-smoke.yml"
+      - "src/worker-entry.js"
+      - "src/worker.js"
+      - "migrations/0003_mirror_auth_token.sql"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/mirror-auth-smoke.yml"
+      - "src/worker-entry.js"
+      - "src/worker.js"
+      - "migrations/0003_mirror_auth_token.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gp-mirror-auth-smoke
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+  DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+  PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Preparar lead QA e capturar token
+        id: qa
+        shell: bash
+        run: |
+          set -euo pipefail
+          id="qa-mirror-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          phone="55218$(printf '%08d' $((GITHUB_RUN_ID % 100000000)))"
+          email="${id}@example.invalid"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "phone=$phone" >> "$GITHUB_OUTPUT"
+          echo "email=$email" >> "$GITHUB_OUTPUT"
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          original=$(jq -nc '{cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",tamanho_publico:"",experiencia_afiliado:"",enviado_em_local:"2026-08-23T06:00:00.000Z"}')
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,canal_divulgacao,link_canal,observacao,origem,utm_source,utm_medium,utm_campaign,pagina_url,user_agent,enviado_em_local,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending')"
+          params=$(jq -nc --arg id "$id" --arg phone "$phone" --arg email "$email" --arg payload "$original" '[$id,"comprar","QA MIRROR AUTH",$phone,$phone,$email,$email,"Brazil",1,null,null,"QA auth","ci-mirror-auth","qa","github","mirror-auth","https://preview.invalid/","GitHub Actions","2026-08-23T06:00:00.000Z",$payload]')
+          body=$(jq -nc --arg sql "$sql" --argjson params "$params" '{sql:$sql,params:$params}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+
+          token_body=$(jq -nc --arg id "$id" '{sql:"SELECT mirror_auth_token FROM leads WHERE submission_id=? LIMIT 1",params:[$id]}')
+          token_response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$token_body")
+          token=$(jq -r '.result[0].results[0].mirror_auth_token // empty' <<<"$token_response")
+          test "${#token}" -eq 64
+          [[ "$token" =~ ^[a-f0-9]{64}$ ]]
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+          echo 'PASS: capability token criado pelo D1'
+
+      - name: Aguardar Worker v3 exigir token
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_PHONE: ${{ steps.qa.outputs.phone }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg id "$QA_ID" --arg phone "$QA_PHONE" --arg email "$QA_EMAIL" '{submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:$phone,email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          for attempt in $(seq 1 80); do
+            code=$(curl -sS -o /tmp/no-token-wait.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload" || true)
+            if [ "$code" = 403 ]; then exit 0; fi
+            sleep 3
+          done
+          cat /tmp/no-token-wait.json 2>/dev/null || true
+          exit 1
+
+      - name: Token ausente deve bloquear
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_PHONE: ${{ steps.qa.outputs.phone }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg id "$QA_ID" --arg phone "$QA_PHONE" --arg email "$QA_EMAIL" '{submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:$phone,email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          code=$(curl -sS -o /tmp/no-token.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = 403
+          jq -e '.error == "mirror_unauthorized"' /tmp/no-token.json >/dev/null
+
+      - name: Token adulterado deve bloquear
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_PHONE: ${{ steps.qa.outputs.phone }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          bad=$(printf '0%.0s' $(seq 1 64))
+          payload=$(jq -nc --arg token "$bad" --arg id "$QA_ID" --arg phone "$QA_PHONE" --arg email "$QA_EMAIL" '{_mirror_auth_token:$token,submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:$phone,email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          code=$(curl -sS -o /tmp/bad-token.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = 403
+
+      - name: Token e payload canonicos devem autorizar
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_TOKEN: ${{ steps.qa.outputs.token }}
+          QA_PHONE: ${{ steps.qa.outputs.phone }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg token "$QA_TOKEN" --arg id "$QA_ID" --arg phone "$QA_PHONE" --arg email "$QA_EMAIL" '{_mirror_auth_token:$token,submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:$phone,email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          response=$(curl --fail-with-body -sS -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          jq -e '.ok == true' <<<"$response" >/dev/null
+
+      - name: Payload adulterado com token correto deve bloquear
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_TOKEN: ${{ steps.qa.outputs.token }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc --arg token "$QA_TOKEN" --arg id "$QA_ID" --arg email "$QA_EMAIL" '{_mirror_auth_token:$token,submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:"+5521999999999",email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          code=$(curl -sS -o /tmp/tampered.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = 403
+
+      - name: ID inexistente deve bloquear
+        shell: bash
+        run: |
+          set -euo pipefail
+          token=$(printf 'a%.0s' $(seq 1 64))
+          payload=$(jq -nc --arg token "$token" '{_mirror_auth_token:$token,submission_id:"qa-mirror-does-not-exist"}')
+          code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = 403
+
+      - name: Synced deve destruir token e bloquear replay
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+          QA_TOKEN: ${{ steps.qa.outputs.token }}
+          QA_PHONE: ${{ steps.qa.outputs.phone }}
+          QA_EMAIL: ${{ steps.qa.outputs.email }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          body=$(jq -nc --arg id "$QA_ID" '{sql:"UPDATE leads SET sheet_sync_status='\''synced'\'' WHERE submission_id=?",params:[$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = true
+
+          check=$(jq -nc --arg id "$QA_ID" '{sql:"SELECT sheet_sync_status,mirror_auth_token FROM leads WHERE submission_id=? LIMIT 1",params:[$id]}')
+          current=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$check")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$current")" = synced
+          test "$(jq -r '.result[0].results[0].mirror_auth_token // empty' <<<"$current")" = ""
+
+          payload=$(jq -nc --arg token "$QA_TOKEN" --arg id "$QA_ID" --arg phone "$QA_PHONE" --arg email "$QA_EMAIL" '{_mirror_auth_token:$token,submission_id:$id,tipo_interesse:"comprar",nome:"QA MIRROR AUTH",whatsapp:$phone,email:$email,pais:"Brazil",cidade_estado:"Rio de Janeiro — RJ",contato_preferido:"WhatsApp",experiencia_trading:"Menos de 6 meses",principal_objetivo:"Organizar",canal_divulgacao:"",tamanho_publico:"",link_canal:"",experiencia_afiliado:"",observacao:"QA auth",consentimento:"Sim",origem:"ci-mirror-auth",utm_source:"qa",utm_medium:"github",utm_campaign:"mirror-auth",pagina_url:"https://preview.invalid/",enviado_em_local:"2026-08-23T06:00:00.000Z",user_agent:"GitHub Actions"}')
+          code=$(curl -sS -o /tmp/replay.json -w '%{http_code}' -X POST "${PREVIEW_URL}/api/mirror/authorize" -H 'Content-Type: application/json' --data "$payload")
+          test "$code" = 403
+          echo 'PASS: token correto funciona uma vez; replay após synced é bloqueado'
+
+      - name: Limpar QA
+        if: always()
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${QA_ID:-}" ]; then exit 0; fi
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in "DELETE FROM system_events WHERE submission_id=?" "DELETE FROM lead_lot_allocations WHERE submission_id=?" "DELETE FROM leads WHERE submission_id=?"; do
+            body=$(jq -nc --arg sql "$sql" --arg id "$QA_ID" '{sql:$sql,params:[$id]}')
+            curl --fail-with-body -sS -X POST "$api" -H "$auth" -H 'Content-Type: application/json' --data "$body" >/dev/null
+          done

@@ -1,0 +1,53 @@
+{
+  "name": "gerenciador-pro-v2",
+  "main": "src/worker-entry.js",
+  "compatibility_date": "2026-08-23",
+  "workers_dev": true,
+  "preview_urls": true,
+  "keep_vars": true,
+  "vars": {
+    "SHEETS_MIRROR_URL": "https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec"
+  },
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*",
+      "/config.js"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gerenciador-pro-leads",
+      "database_id": "9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SHEET_RETRY_QUEUE",
+        "queue": "gerenciador-pro-sheet-retry"
+      }
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "REGISTRATION_CONTACT_LIMITER",
+      "namespace_id": "41001",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "REGISTRATION_IP_LIMITER",
+      "namespace_id": "41002",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
+    }
+  ]
+}

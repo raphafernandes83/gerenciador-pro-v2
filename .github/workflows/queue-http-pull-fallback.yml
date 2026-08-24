@@ -1,0 +1,195 @@
+name: Queue HTTP pull fallback
+# final gate evidence: HTTP pull retry path
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/queue-http-pull-fallback.yml"
+      - "scripts/pull-sheet-retry-queue.mjs"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/queue-http-pull-fallback.yml"
+      - "scripts/pull-sheet-retry-queue.mjs"
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'gp-sheets-retry-processing' || 'gp-queue-http-pull-smoke' }}
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+  D1_DATABASE_ID: 9e7b9736-b4d7-4aa1-9809-b2198bd0a0f4
+  RETRY_QUEUE_ID: 7f6abeea1385470490a85aaf4d4ca1ba
+  RETRY_QUEUE_NAME: gerenciador-pro-sheet-retry
+  DLQ_QUEUE_NAME: gerenciador-pro-sheet-retry-dlq
+  SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Garantir HTTP pull consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          current=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
+          test "$(jq -r '.success // false' <<<"$current")" = "true"
+          count=$(jq -r '.result | length' <<<"$current")
+          if [ "$count" -eq 0 ]; then
+            payload=$(jq -nc --arg dlq "$DLQ_QUEUE_NAME" '{type:"http_pull",dead_letter_queue:$dlq,settings:{batch_size:50,max_retries:5,retry_delay:60,visibility_timeout_ms:120000}}')
+            created=$(curl --fail-with-body -sS -X POST "${base}/consumers" -H "$auth" -H "Content-Type: application/json" --data "$payload")
+            test "$(jq -r '.success // false' <<<"$created")" = "true"
+            test "$(jq -r '.result.type // empty' <<<"$created")" = "http_pull"
+          else
+            type=$(jq -r '.result[0].type // empty' <<<"$current")
+            test "$count" -eq 1
+            test "$type" = "http_pull" || { echo "FAIL: Queue já possui consumer ${type}"; exit 1; }
+          fi
+          verify=$(curl --fail-with-body -sS "${base}/consumers" -H "$auth")
+          test "$(jq -r '.result | length' <<<"$verify")" -eq 1
+          test "$(jq -r '.result[0].type' <<<"$verify")" = "http_pull"
+          echo "PASS: HTTP pull consumer verificado"
+
+  smoke:
+    needs: configure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enfileirar mensagem QA sem lead
+        id: qa
+        shell: bash
+        run: |
+          set -euo pipefail
+          qa_id="qa-http-pull-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "qa_id=$qa_id" >> "$GITHUB_OUTPUT"
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}/messages"
+          payload=$(jq -nc --arg id "$qa_id" '{body:{type:"sheet_mirror_retry",submissionId:$id,reason:"qa_missing_lead"}}')
+          response=$(curl --fail-with-body -sS -X POST "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$payload")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+
+      - name: Consumir até confirmar ACK da própria mensagem QA
+        shell: bash
+        env:
+          QA_ID: ${{ steps.qa.outputs.qa_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="SELECT (SELECT COUNT(*) FROM leads WHERE submission_id=?) AS leads, (SELECT COUNT(*) FROM system_events WHERE submission_id=? AND event_type='sheet_pull_missing_lead') AS events"
+          for attempt in $(seq 1 12); do
+            node scripts/pull-sheet-retry-queue.mjs || true
+            body=$(jq -nc --arg sql "$sql" --arg id "$QA_ID" '{sql:$sql,params:[$id,$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+            leads=$(jq -r '.result[0].results[0].leads // -1' <<<"$response")
+            events=$(jq -r '.result[0].results[0].events // 0' <<<"$response")
+            if [ "$leads" = "0" ] && [ "$events" -ge 1 ]; then
+              cleanup=$(jq -nc --arg id "$QA_ID" '{sql:"DELETE FROM system_events WHERE submission_id=?",params:[$id]}')
+              curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$cleanup" >/dev/null
+              echo "PASS: mensagem QA específica consumida e ACK confirmada na tentativa ${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'FAIL: mensagem QA não foi observada após múltiplos pulls'
+          exit 1
+
+      - name: Verificar se Apps Script está pronto para contingência real
+        id: apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          probe='{"_mirror_auth_token":"0000000000000000000000000000000000000000000000000000000000000000","submission_id":"queue-smoke-nonexistent"}'
+          response=$(curl -sSL --max-time 20 "$SHEETS_MIRROR_URL" -H 'Content-Type: application/json' --data "$probe" || true)
+          if jq -e '.ok == false and .error == "mirror_unauthorized"' <<<"$response" >/dev/null 2>&1; then ready=true; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "Apps Script disponível para retry real: ${ready}"
+
+      - name: Preparar lead real em retry usando âncora Queue
+        if: steps.apps.outputs.ready == 'true'
+        id: retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          id="qa-http-pull-retry-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "submission_id=$id" >> "$GITHUB_OUTPUT"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="INSERT INTO leads (submission_id,tipo_interesse,nome,whatsapp,whatsapp_norm,email,email_norm,pais,consentimento,origem,payload_json,sheet_sync_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'retry')"
+          payload_json='{"tipo_interesse":"comprar","nome":"QA QUEUE — NÃO É LEAD","whatsapp":"+5521999990074","email":"qa.queue.anchor@example.invalid","pais":"Brazil","consentimento":"Sim","origem":"ci-queue-retry"}'
+          body=$(jq -nc --arg sql "$sql" --arg id "$id" --arg payload "$payload_json" '{sql:$sql,params:[$id,"comprar","QA QUEUE — NÃO É LEAD","+5521999990074","5521999990074","qa.queue.anchor@example.invalid","qa.queue.anchor@example.invalid","Brazil",1,"ci-queue-retry",$payload]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+
+      - name: Enfileirar retry real
+        if: steps.apps.outputs.ready == 'true'
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${RETRY_QUEUE_ID}/messages"
+          payload=$(jq -nc --arg id "$SUBMISSION_ID" '{body:{type:"sheet_mirror_retry",submissionId:$id,reason:"qa_real_retry"}}')
+          response=$(curl --fail-with-body -sS -X POST "$url" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" --data "$payload")
+          test "$(jq -r '.success // false' <<<"$response")" = "true"
+
+      - name: Consumir retry real e sincronizar Sheets
+        if: steps.apps.outputs.ready == 'true'
+        run: node scripts/pull-sheet-retry-queue.mjs
+
+      - name: Provar retry para synced
+        if: steps.apps.outputs.ready == 'true'
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          sql="SELECT sheet_sync_status,sheet_sync_attempts,(SELECT COUNT(*) FROM system_events WHERE submission_id=? AND event_type='sheet_pull_synced') AS sync_events FROM leads WHERE submission_id=? LIMIT 1"
+          body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id,$id]}')
+          response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+          test "$(jq -r '.result[0].results[0].sheet_sync_status // empty' <<<"$response")" = "synced"
+          test "$(jq -r '.result[0].results[0].sheet_sync_attempts // 0' <<<"$response")" -ge 1
+          test "$(jq -r '.result[0].results[0].sync_events // 0' <<<"$response")" -ge 1
+          echo "PASS: D1 retry -> Queue HTTP Pull -> Sheets -> D1 synced"
+
+      - name: Registrar skip consciente do retry real
+        if: steps.apps.outputs.ready != 'true'
+        shell: bash
+        run: |
+          echo 'SKIP controlado: Queue/ACK passou; retry real -> Sheets aguarda autorização UrlFetchApp do Apps Script.'
+
+      - name: Limpar lead real de QA
+        if: always() && steps.retry.outputs.submission_id != ''
+        shell: bash
+        env:
+          SUBMISSION_ID: ${{ steps.retry.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          for sql in "DELETE FROM system_events WHERE submission_id=?" "DELETE FROM leads WHERE submission_id=?"; do
+            body=$(jq -nc --arg sql "$sql" --arg id "$SUBMISSION_ID" '{sql:$sql,params:[$id]}')
+            response=$(curl --fail-with-body -sS -X POST "$api" -H "$auth" -H "Content-Type: application/json" --data "$body")
+            test "$(jq -r '.success // false' <<<"$response")" = "true"
+          done
+
+  consume:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consumir retries pendentes
+        run: node scripts/pull-sheet-retry-queue.mjs

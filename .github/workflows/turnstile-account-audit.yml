@@ -1,0 +1,49 @@
+name: Turnstile account capability audit
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/turnstile-account-audit.yml"
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/turnstile-account-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+    steps:
+      - name: Verificar acesso Turnstile sem alterar widgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -w '\n%{http_code}' \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/challenges/widgets" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          code=$(tail -n1 <<<"$response")
+          body=$(sed '$d' <<<"$response")
+          if [ "$code" != 200 ]; then
+            echo "FAIL: Turnstile API indisponível (HTTP ${code})"
+            echo "$body" | jq -c '{success,errors,messages}' 2>/dev/null || true
+            exit 1
+          fi
+          jq -e '.success == true and (.result | type == "array")' <<<"$body" >/dev/null
+          count=$(jq '.result | length' <<<"$body")
+          echo "PASS: Turnstile API acessível; widgets existentes=${count}; nenhuma alteração executada."
+          {
+            echo '## Turnstile account capability audit'
+            echo
+            echo '- ✅ API de Turnstile acessível com o token atual.'
+            echo "- Widgets existentes: ${count}."
+            echo '- Nenhum widget foi criado, alterado ou removido.'
+            echo '- Após escolher o domínio, criar widget Managed restrito ao hostname final.'
+          } >> "$GITHUB_STEP_SUMMARY"
