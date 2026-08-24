@@ -1,0 +1,54 @@
+name: Domain availability check
+
+on:
+  push:
+    branches: ["infra/cloudflare-foundation"]
+    paths:
+      - ".github/workflows/domain-availability-check.yml"
+  workflow_dispatch:
+    inputs:
+      domains:
+        description: 'Lista separada por vírgula; vazio usa shortlist padrão'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+    steps:
+      - name: Consultar disponibilidade e preço sem registrar
+        shell: bash
+        env:
+          INPUT_DOMAINS: ${{ inputs.domains }}
+        run: |
+          set -euo pipefail
+          raw="${INPUT_DOMAINS:-}"
+          if [ -z "$raw" ]; then
+            raw='gptrademanager.com,gptradingpro.com,gptraderpro.com,gptradinghub.com,gptradingmanager.com'
+          fi
+          json=$(jq -nc --arg raw "$raw" '{domains:($raw|split(",")|map(gsub("^\\s+|\\s+$";""))|map(select(length>0)))}')
+          response=$(curl -sS -w '\n%{http_code}' -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/registrar/domain-check" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$json")
+          code=$(tail -n1 <<<"$response")
+          body=$(sed '$d' <<<"$response")
+          if [ "$code" != '200' ]; then
+            echo "Registrar domain-check indisponível para o token atual (HTTP ${code})."
+            echo "$body" | jq -c '{success,errors,messages}' 2>/dev/null || true
+            exit 2
+          fi
+          echo '## Disponibilidade de domínios' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Domínio | Registrável | Registro | Renovação | Moeda | Motivo |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---:|---:|---:|---|---|' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.result.domains[] | "| \(.name) | \(.registrable) | \(.pricing.registration_cost // "-") | \(.pricing.renewal_cost // "-") | \(.pricing.currency // "-") | \(.reason // "-") |"' <<<"$body" >> "$GITHUB_STEP_SUMMARY"
+          jq -c '.result.domains[] | {name,registrable,tier,pricing,reason}' <<<"$body"
