@@ -1,8 +1,5 @@
 (() => {
-  const PREVIEW_HOST = "infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev";
-  const TEST_SITEKEY = "1x00000000000000000000AA";
-
-  const configuredSitekey = window.location.hostname === PREVIEW_HOST ? TEST_SITEKEY : "";
+  const configuredSitekey = "__GP_TURNSTILE_SITEKEY__";
 
   window.GP_FORM_CONFIG = {
     endpoint: "/api/register",
