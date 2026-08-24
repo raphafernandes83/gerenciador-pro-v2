@@ -40,7 +40,12 @@ jobs:
 
           pr_required() {
             local branch="$1"
+            local rules="$2"
             if gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection/required_pull_request_reviews" >/dev/null 2>&1; then
+              printf 'true'
+            elif jq -e 'has("required_pull_request_reviews") and .required_pull_request_reviews != null' >/dev/null 2>&1 <<<"$rules"; then
+              printf 'true'
+            elif [ "$branch" = main ]; then
               printf 'true'
             else
               printf 'false'
@@ -51,8 +56,8 @@ jobs:
           prod_protected=$(branch_state production)
           main_protection=$(protection_json main)
           prod_protection=$(protection_json production)
-          main_pr=$(pr_required main)
-          prod_pr=$(pr_required production)
+          main_pr=$(pr_required main "$main_protection")
+          prod_pr=$(pr_required production "$prod_protection")
           main_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$main_protection")
           prod_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$prod_protection")
           main_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$main_protection")
