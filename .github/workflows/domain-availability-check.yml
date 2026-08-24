@@ -1,3 +1,4 @@
+# trigger: registrar read-only recheck
 name: Domain availability check
 
 on:
