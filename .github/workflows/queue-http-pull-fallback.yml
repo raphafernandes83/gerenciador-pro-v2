@@ -1,4 +1,5 @@
 name: Queue HTTP pull fallback
+# final gate evidence: HTTP pull retry path
 
 on:
   pull_request:

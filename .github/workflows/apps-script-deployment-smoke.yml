@@ -1,4 +1,5 @@
 name: Apps Script deployment smoke
+# final gate evidence: Apps Script v3 readiness
 
 on:
   pull_request:

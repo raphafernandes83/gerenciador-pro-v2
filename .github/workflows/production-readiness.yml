@@ -1,4 +1,5 @@
 name: Production readiness
+# final gate evidence: post-test readiness
 
 # Gate final fail-closed: produção só fica pronta com health, headers seguros, Turnstile real e isolamento de origem comprovados.
 on:

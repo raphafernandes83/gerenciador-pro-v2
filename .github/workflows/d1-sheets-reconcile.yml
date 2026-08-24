@@ -1,5 +1,6 @@
 # trigger: post-auth reconciliation proof
 name: D1 Sheets reconciliation
+# final gate evidence: retry to synced proof
 
 on:
   schedule:

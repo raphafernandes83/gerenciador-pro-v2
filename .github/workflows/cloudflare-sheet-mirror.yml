@@ -1,4 +1,5 @@
 name: Cloudflare Sheets mirror
+# final gate evidence: D1 to Apps Script to Sheets
 
 on:
   pull_request:
