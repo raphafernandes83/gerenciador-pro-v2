@@ -19,6 +19,32 @@ Estado: preparação somente. Este documento não autoriza compra de domínio, m
 - Preferir domínio `.com` curto, internacional e alinhado à marca.
 - Não registrar automaticamente a partir de CI.
 
+Shortlist padrão do checker read-only:
+
+1. `gptrademanager.com`
+2. `gptradingpro.com`
+3. `gptraderpro.com`
+4. `gptradinghub.com`
+5. `gptradingmanager.com`
+
+O workflow `Domain availability check` tenta primeiro a Cloudflare Registrar. Se a API de Registrar não estiver disponível para o token Cloudflare, ele pode usar como fallback a API oficial GoDaddy v3 em modo `ACCURACY`.
+
+O fallback GoDaddy é estritamente read-only:
+
+- endpoint: `GET /v3/domains/check-availability`;
+- escopo mínimo do PAT: `domains.domain:read`;
+- mostra disponibilidade e preço indicativo de registro/renovação;
+- não solicita quote de compra;
+- não registra, reserva, renova nem transfere domínio.
+
+Se esse fallback for usado, criar no GitHub Actions apenas o secret:
+
+`GODADDY_PAT`
+
+O PAT deve ter somente `domains.domain:read`. Não conceder escopos de criação/registro para esta etapa e nunca versionar ou colar o PAT em arquivos do repositório.
+
+A disponibilidade e o preço mostrados por um availability check são indicativos; antes de qualquer cobrança deve haver nova confirmação do domínio e do preço pelo responsável.
+
 ### 2. Colocar o domínio na Cloudflare
 
 - A zona deve estar ativa na mesma conta Cloudflare do Worker.
@@ -114,6 +140,8 @@ O workflow executa smoke pós-promoção e dispara rollback automático se o smo
 - Não comprar domínio sem aprovação explícita de preço/nome.
 - Não fazer push manual direto para `production`.
 - Não versionar `TURNSTILE_SECRET_KEY`.
+- Não versionar `GODADDY_PAT`.
+- Não conceder permissão de compra ao PAT usado apenas para disponibilidade.
 - Não usar chaves Turnstile de teste em produção.
 - Não aceitar `workers.dev` como hostname final.
 - Não deixar Apps Script de produção apontando para o Worker de preview.
