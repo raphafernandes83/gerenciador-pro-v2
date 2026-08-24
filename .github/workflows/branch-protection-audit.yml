@@ -81,7 +81,7 @@ jobs:
             if [ "$main_safe" = true ] && [ "$prod_safe" = true ]; then
               echo '**PASS: proteção compatível com PR em main e promoção/rollback em production.**'
             else
-              echo '**NO-GO controlado: ajuste manual de branch protection ainda necessário.**'
+              echo '**NO-GO: branch protection não atende ao contrato de produção.**'
               echo ''
               echo '- main: protegida, PR obrigatório, force-push OFF, exclusão OFF.'
               echo '- production: protegida, PR obrigatório OFF, force-push OFF, exclusão OFF.'
@@ -89,3 +89,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "main_safe=${main_safe} production_safe=${prod_safe}"
+
+          if [ "$main_safe" != true ] || [ "$prod_safe" != true ]; then
+            echo "::error::NO-GO: branch protection inexata (main_safe=${main_safe}, production_safe=${prod_safe})"
+            exit 1
+          fi
