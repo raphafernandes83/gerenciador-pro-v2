@@ -2,6 +2,10 @@
 name: Turnstile account capability audit
 
 on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/turnstile-account-audit.yml"
   push:
     branches: ["infra/cloudflare-foundation"]
     paths:
