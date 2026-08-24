@@ -1,48 +1,13 @@
-name: Branch protection apply once
+name: Branch protection apply once (disabled)
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/branch-protection-apply-once.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
-    if: github.event.pull_request.number == 14
+  disabled:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Tentar proteger production sem bloquear promoção e rollback
-        id: prod
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          jq -n '{required_status_checks:null,enforce_admins:false,required_pull_request_reviews:null,restrictions:null,required_linear_history:true,allow_force_pushes:false,allow_deletions:false,block_creations:false,required_conversation_resolution:false,lock_branch:false,allow_fork_syncing:false}' \
-            | gh api --method PUT "repos/${GITHUB_REPOSITORY}/branches/production/protection" --input -
-
-      - name: Tentar proteger main exigindo Pull Request
-        id: main
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          jq -n '{required_status_checks:null,enforce_admins:true,required_pull_request_reviews:{dismiss_stale_reviews:false,require_code_owner_reviews:false,required_approving_review_count:0,require_last_push_approval:false},restrictions:null,required_linear_history:true,allow_force_pushes:false,allow_deletions:false,block_creations:false,required_conversation_resolution:false,lock_branch:false,allow_fork_syncing:false}' \
-            | gh api --method PUT "repos/${GITHUB_REPOSITORY}/branches/main/protection" --input -
-
-      - name: Verificar estado final sem assumir sucesso
-        shell: bash
-        run: |
-          set -euo pipefail
-          main=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected')
-          production=$(gh api "repos/${GITHUB_REPOSITORY}/branches/production" --jq '.protected')
-          echo "main=${main} production=${production}"
-          if [ "$main" = true ] && [ "$production" = true ]; then
-            echo 'PASS: proteção aplicada automaticamente; auditor exato fará a validação final.'
-          else
-            echo 'GATE MANUAL: token do Actions não possui administração suficiente para branch protection.'
-          fi
+      - run: echo 'Workflow temporário desativado. Use Branch protection exactness para auditoria.'
