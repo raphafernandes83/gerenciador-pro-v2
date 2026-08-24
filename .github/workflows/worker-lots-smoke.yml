@@ -1,4 +1,5 @@
 name: Worker lots smoke
+# final post-adjustment verification
 
 on:
   pull_request:
