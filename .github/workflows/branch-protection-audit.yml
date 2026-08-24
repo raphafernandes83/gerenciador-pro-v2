@@ -1,0 +1,115 @@
+name: Branch protection exactness
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/branch-protection-audit.yml"
+      - ".github/workflows/production-promote.yml"
+      - ".github/workflows/production-rollback.yml"
+      - ".github/workflows/production-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Auditar regras exatas de main e production
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch_state() {
+            local branch="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}" --jq '.protected'
+          }
+
+          protection_json() {
+            local branch="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection" 2>/dev/null || printf '{}'
+          }
+
+          pr_required() {
+            local branch="$1"
+            if gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}/protection/required_pull_request_reviews" >/dev/null 2>&1; then
+              printf 'true'
+            else
+              printf 'false'
+            fi
+          }
+
+          main_protected=$(branch_state main)
+          prod_protected=$(branch_state production)
+          main_protection=$(protection_json main)
+          prod_protection=$(protection_json production)
+          main_pr=$(pr_required main)
+          prod_pr=$(pr_required production)
+          main_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$main_protection")
+          prod_force=$(jq -r '.allow_force_pushes.enabled // false' <<<"$prod_protection")
+          main_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$main_protection")
+          prod_delete=$(jq -r '.allow_deletions.enabled // false' <<<"$prod_protection")
+
+          main_safe=false
+          prod_safe=false
+          if [ "$main_protected" = true ] && [ "$main_pr" = true ] && [ "$main_force" = false ] && [ "$main_delete" = false ]; then
+            main_safe=true
+          fi
+          if [ "$prod_protected" = true ] && [ "$prod_pr" = false ] && [ "$prod_force" = false ] && [ "$prod_delete" = false ]; then
+            prod_safe=true
+          fi
+
+          {
+            echo "main_protected=$main_protected"
+            echo "main_pr=$main_pr"
+            echo "main_force=$main_force"
+            echo "main_delete=$main_delete"
+            echo "main_safe=$main_safe"
+            echo "prod_protected=$prod_protected"
+            echo "prod_pr=$prod_pr"
+            echo "prod_force=$prod_force"
+            echo "prod_delete=$prod_delete"
+            echo "prod_safe=$prod_safe"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resumo de segurança
+        shell: bash
+        env:
+          MAIN_PROTECTED: ${{ steps.audit.outputs.main_protected }}
+          MAIN_PR: ${{ steps.audit.outputs.main_pr }}
+          MAIN_FORCE: ${{ steps.audit.outputs.main_force }}
+          MAIN_DELETE: ${{ steps.audit.outputs.main_delete }}
+          MAIN_SAFE: ${{ steps.audit.outputs.main_safe }}
+          PROD_PROTECTED: ${{ steps.audit.outputs.prod_protected }}
+          PROD_PR: ${{ steps.audit.outputs.prod_pr }}
+          PROD_FORCE: ${{ steps.audit.outputs.prod_force }}
+          PROD_DELETE: ${{ steps.audit.outputs.prod_delete }}
+          PROD_SAFE: ${{ steps.audit.outputs.prod_safe }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Branch protection exactness'
+            echo ''
+            echo '| Regra | main | production |'
+            echo '|---|---|---|'
+            echo "| Protegida | ${MAIN_PROTECTED} | ${PROD_PROTECTED} |"
+            echo "| PR obrigatório | ${MAIN_PR} | ${PROD_PR} |"
+            echo "| Force-push permitido | ${MAIN_FORCE} | ${PROD_FORCE} |"
+            echo "| Exclusão permitida | ${MAIN_DELETE} | ${PROD_DELETE} |"
+            echo "| Configuração segura | ${MAIN_SAFE} | ${PROD_SAFE} |"
+            echo ''
+            if [ "$MAIN_SAFE" = true ] && [ "$PROD_SAFE" = true ]; then
+              echo '**PASS: proteção compatível com PR em main e promoção/rollback em production.**'
+            else
+              echo '**NO-GO controlado: ajuste manual de branch protection ainda necessário.**'
+              echo ''
+              echo '- main: protegida, PR obrigatório, force-push OFF, exclusão OFF.'
+              echo '- production: protegida, PR obrigatório OFF, force-push OFF, exclusão OFF.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "main_safe=${MAIN_SAFE} production_safe=${PROD_SAFE}"
