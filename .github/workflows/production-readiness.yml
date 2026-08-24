@@ -1,5 +1,6 @@
 name: Production readiness
 
+# Gate final fail-closed: produção só fica pronta com health, headers seguros, Turnstile real e isolamento de origem comprovados.
 on:
   pull_request:
     branches: ["main"]
