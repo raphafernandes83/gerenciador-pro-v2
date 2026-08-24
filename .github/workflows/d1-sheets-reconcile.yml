@@ -41,7 +41,6 @@ jobs:
         run: node scripts/reconcile-sheets.mjs
 
   smoke:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

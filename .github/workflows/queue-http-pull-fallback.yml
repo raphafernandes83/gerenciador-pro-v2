@@ -33,7 +33,6 @@ env:
 
 jobs:
   configure:
-    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     steps:
       - name: Garantir HTTP pull consumer
@@ -61,7 +60,6 @@ jobs:
           echo "PASS: HTTP pull consumer verificado"
 
   smoke:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     needs: configure
     runs-on: ubuntu-latest
     steps:
