@@ -30,6 +30,7 @@ jobs:
       DLQ_QUEUE_NAME: gerenciador-pro-sheet-retry-dlq
       PREVIEW_URL: https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev
       SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      TURNSTILE_TEST_SITEKEY: 1x00000000000000000000AA
 
     steps:
       - uses: actions/checkout@v4
@@ -203,7 +204,7 @@ jobs:
           echo "production_pr=$prod_pr" >> "$GITHUB_OUTPUT"
           echo "main_safe=${main_safe}; production_safe=${prod_safe}"
 
-      - name: Verificar URL final e Turnstile server-side quando informado
+      - name: Verificar URL final, headers e Turnstile real quando informado
         id: prod
         shell: bash
         env:
@@ -213,10 +214,52 @@ jobs:
           ready=false
           if [ -n "${PRODUCTION_URL:-}" ]; then
             base="${PRODUCTION_URL%/}"
-            if [[ "$base" == https://* ]]; then
-              payload='{"tipo_interesse":"comprar","nome":"READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim"}'
-              code=$(curl -sS --max-time 15 -o /tmp/prod.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$payload" || true)
-              if [ "$code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod.json >/dev/null 2>&1; then ready=true; fi
+            if [[ "$base" == https://* ]] && [ "$base" != "$PREVIEW_URL" ]; then
+              health_code=$(curl -sS --max-time 15 -o /tmp/prod-health.json -w '%{http_code}' "${base}/api/health" || true)
+              headers=$(curl -sS --max-time 15 -D - -o /dev/null "${base}/" || true)
+              config_js=$(curl -sS --max-time 15 "${base}/config.js" || true)
+              sitekey=$(sed -n 's/^[[:space:]]*const configuredSitekey = "\([^"]*\)";[[:space:]]*$/\1/p' <<<"$config_js" | head -n1)
+
+              health_ok=false
+              headers_ok=false
+              sitekey_ok=false
+              missing_ok=false
+              dummy_ok=false
+              cross_ok=false
+
+              if [ "$health_code" = '200' ] \
+                && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/prod-health.json >/dev/null 2>&1; then
+                health_ok=true
+              fi
+
+              if grep -qi '^content-security-policy:' <<<"$headers" \
+                && grep -qi '^strict-transport-security:' <<<"$headers" \
+                && grep -qi '^x-content-type-options: nosniff' <<<"$headers" \
+                && grep -qi '^x-frame-options: DENY' <<<"$headers"; then
+                headers_ok=true
+              fi
+
+              if [ -n "$sitekey" ] \
+                && [ "$sitekey" != "$TURNSTILE_TEST_SITEKEY" ] \
+                && ! grep -F '__GP_TURNSTILE_SITEKEY__' <<<"$config_js" >/dev/null; then
+                sitekey_ok=true
+              fi
+
+              missing='{"tipo_interesse":"comprar","nome":"PRODUCTION READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+              missing_code=$(curl -sS --max-time 15 -o /tmp/prod-missing.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$missing" || true)
+              if [ "$missing_code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod-missing.json >/dev/null 2>&1; then missing_ok=true; fi
+
+              dummy='{"tipo_interesse":"comprar","nome":"PRODUCTION READINESS","whatsapp":"+5521999999999","email":"readiness@example.invalid","pais":"Brazil","consentimento":"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+              dummy_code=$(curl -sS --max-time 15 -o /tmp/prod-dummy.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$dummy" || true)
+              if [ "$dummy_code" = '403' ] && jq -e '.error == "turnstile_invalid"' /tmp/prod-dummy.json >/dev/null 2>&1; then dummy_ok=true; fi
+
+              cross_code=$(curl -sS --max-time 15 -o /tmp/prod-cross.json -w '%{http_code}' -X POST "${base}/api/register" -H 'Origin: https://evil.example' -H 'Content-Type: application/json' --data "$missing" || true)
+              if [ "$cross_code" = '403' ] && jq -e '.error == "origin_not_allowed"' /tmp/prod-cross.json >/dev/null 2>&1; then cross_ok=true; fi
+
+              echo "production_probe health=${health_ok} headers=${headers_ok} sitekey=${sitekey_ok} missing=${missing_ok} dummy=${dummy_ok} cross_origin=${cross_ok}"
+              if [ "$health_ok" = true ] && [ "$headers_ok" = true ] && [ "$sitekey_ok" = true ] && [ "$missing_ok" = true ] && [ "$dummy_ok" = true ] && [ "$cross_ok" = true ]; then
+                ready=true
+              fi
             fi
           fi
           echo "ready=$ready" >> "$GITHUB_OUTPUT"
@@ -252,7 +295,7 @@ jobs:
             if [ "$APPS" = true ]; then echo '| Apps Script v3 + UrlFetchApp | ✅ |'; else echo '| Apps Script v3 + UrlFetchApp | ⏳ |'; fi
             if [ "$MAIN_SAFE" = true ]; then echo '| main: PR obrigatório + sem force/delete | ✅ |'; else echo '| main: PR obrigatório + sem force/delete | ⏳ |'; fi
             if [ "$PROD_SAFE" = true ]; then echo '| production: promoção direta segura + sem force/delete | ✅ |'; else echo '| production: promoção direta segura + sem force/delete | ⏳ |'; fi
-            if [ "$PROD_READY" = true ]; then echo '| URL final + Turnstile server-side | ✅ |'; else echo '| URL final + Turnstile server-side | ⏳ |'; fi
+            if [ "$PROD_READY" = true ]; then echo '| URL final + health + headers + Turnstile real | ✅ |'; else echo '| URL final + health + headers + Turnstile real | ⏳ |'; fi
             echo ''
             if [ "$manual_ready" = true ]; then echo '**GO técnico — pronto para workflow de promoção.**'; else echo '**NO-GO controlado — infraestrutura automática pronta; gates finais ainda pendentes.**'; fi
           } >> "$GITHUB_STEP_SUMMARY"
