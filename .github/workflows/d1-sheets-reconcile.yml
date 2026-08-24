@@ -102,7 +102,8 @@ jobs:
       - name: Registrar skip consciente
         if: steps.apps.outputs.ready != 'true'
         shell: bash
-        run: echo 'SKIP controlado: reconciliador aguarda autorização UrlFetchApp do Apps Script; nenhum fixture D1 foi criado.'
+        run: |
+          echo 'SKIP controlado: reconciliador aguarda autorização UrlFetchApp do Apps Script; nenhum fixture D1 foi criado.'
 
       - name: Limpar QA
         if: always() && steps.seed.outputs.id != ''

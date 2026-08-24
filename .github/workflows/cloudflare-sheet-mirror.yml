@@ -175,7 +175,8 @@ jobs:
       - name: Registrar skip consciente
         if: steps.apps.outputs.ready != 'true'
         shell: bash
-        run: echo 'SKIP controlado: Apps Script v3 está publicado, mas UrlFetchApp ainda precisa de autorização; nenhum lead de QA foi criado.'
+        run: |
+          echo 'SKIP controlado: Apps Script v3 está publicado, mas UrlFetchApp ainda precisa de autorização; nenhum lead de QA foi criado.'
 
       - name: Limpar fixtures sinteticos do D1
         if: always()

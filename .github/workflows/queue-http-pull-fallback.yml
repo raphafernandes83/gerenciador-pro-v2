@@ -167,7 +167,8 @@ jobs:
       - name: Registrar skip consciente do retry real
         if: steps.apps.outputs.ready != 'true'
         shell: bash
-        run: echo 'SKIP controlado: Queue/ACK passou; retry real -> Sheets aguarda autorização UrlFetchApp do Apps Script.'
+        run: |
+          echo 'SKIP controlado: Queue/ACK passou; retry real -> Sheets aguarda autorização UrlFetchApp do Apps Script.'
 
       - name: Limpar lead real de QA
         if: always() && steps.retry.outputs.submission_id != ''
