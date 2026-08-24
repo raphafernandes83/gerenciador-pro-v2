@@ -30,6 +30,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SHEETS_MIRROR_URL: https://script.google.com/macros/s/AKfycbyiGH-5FRXZteXMgog2bhaSEA1_UMOe78irya7DinWGfkmqDft6ELDJrcj12eHjMU2ZFQ/exec
+      TURNSTILE_TEST_SITEKEY: 1x00000000000000000000AA
+
     steps:
       - name: Exigir confirmação explícita
         shell: bash
@@ -39,6 +41,8 @@ jobs:
             https://*) ;;
             *) echo 'production_url precisa ser HTTPS'; exit 1 ;;
           esac
+          test '${{ inputs.production_url }}' != 'https://infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev' \
+            || { echo 'FAIL: preview não pode ser usado como URL final'; exit 1; }
 
       - uses: actions/checkout@v4
         with:
@@ -80,7 +84,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           main_protected=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected')
           prod_protected=$(gh api "repos/${GITHUB_REPOSITORY}/branches/production" --jq '.protected')
           test "$main_protected" = true || { echo 'FAIL: main não está protegida'; exit 1; }
@@ -122,11 +125,26 @@ jobs:
           base="${PRODUCTION_URL%/}"
           for attempt in $(seq 1 90); do
             health_code=$(curl -sS --max-time 10 -o /tmp/prod-health.json -w '%{http_code}' "${base}/api/health" || true)
-            if [ "$health_code" = '200' ] && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/prod-health.json >/dev/null 2>&1; then
-              payload='{"tipo_interesse":"comprar","nome":"PRODUCTION SECURITY SMOKE","whatsapp":"+5521999999999","email":"prod-security-smoke@example.invalid","pais":"Brazil","consentimento":"Sim"}'
-              code=$(curl -sS --max-time 15 -o /tmp/prod-register.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$payload" || true)
-              if [ "$code" = '403' ] && jq -e '.error == "turnstile_required"' /tmp/prod-register.json >/dev/null 2>&1; then
-                echo 'PASS: produção saudável e Turnstile real configurado'
+            config_js=$(curl -sS --max-time 10 "${base}/config.js" || true)
+            sitekey=$(sed -n 's/^[[:space:]]*const configuredSitekey = "\([^"]*\)";[[:space:]]*$/\1/p' <<<"$config_js" | head -n1)
+
+            if [ "$health_code" = '200' ] \
+              && jq -e '.ok == true and .database == "reachable" and .sheetMirrorConfigured == true and .retryQueueConfigured == true and .rateLimitConfigured == true' /tmp/prod-health.json >/dev/null 2>&1 \
+              && [ -n "$sitekey" ] \
+              && [ "$sitekey" != "$TURNSTILE_TEST_SITEKEY" ] \
+              && ! grep -F '__GP_TURNSTILE_SITEKEY__' <<<"$config_js" >/dev/null; then
+
+              missing='{"tipo_interesse":"comprar","nome":"PRODUCTION SECURITY SMOKE","whatsapp":"+5521999999999","email":"prod-security-smoke@example.invalid","pais":"Brazil","consentimento":"Sim"}'
+              missing_code=$(curl -sS --max-time 15 -o /tmp/prod-register-missing.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$missing" || true)
+
+              dummy='{"tipo_interesse":"comprar","nome":"PRODUCTION SECURITY SMOKE","whatsapp":"+5521999999999","email":"prod-security-smoke@example.invalid","pais":"Brazil","consentimento":"Sim","cf-turnstile-response":"XXXX.DUMMY.TOKEN.XXXX"}'
+              dummy_code=$(curl -sS --max-time 15 -o /tmp/prod-register-dummy.json -w '%{http_code}' -X POST "${base}/api/register" -H "Origin: ${base}" -H 'Content-Type: application/json' --data "$dummy" || true)
+
+              if [ "$missing_code" = '403' ] \
+                && jq -e '.error == "turnstile_required"' /tmp/prod-register-missing.json >/dev/null 2>&1 \
+                && [ "$dummy_code" = '403' ] \
+                && jq -e '.error == "turnstile_invalid"' /tmp/prod-register-dummy.json >/dev/null 2>&1; then
+                echo "PASS: produção saudável; sitekey real injetada; secret não usa chave de teste"
                 exit 0
               fi
             fi
@@ -134,7 +152,8 @@ jobs:
           done
           echo 'FAIL: produção não passou smoke dentro da janela'
           cat /tmp/prod-health.json 2>/dev/null || true
-          cat /tmp/prod-register.json 2>/dev/null || true
+          cat /tmp/prod-register-missing.json 2>/dev/null || true
+          cat /tmp/prod-register-dummy.json 2>/dev/null || true
           exit 1
 
       - name: Rollback automático se o smoke falhar
