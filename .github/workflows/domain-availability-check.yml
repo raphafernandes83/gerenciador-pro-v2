@@ -2,6 +2,10 @@
 name: Domain availability check
 
 on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/domain-availability-check.yml"
   push:
     branches: ["infra/cloudflare-foundation"]
     paths:
