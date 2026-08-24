@@ -2,6 +2,7 @@ import baseWorker from "./worker.js";
 import { allocateRegistrationLot, getLotStatus } from "./lots.js";
 
 const PREVIEW_HOST = "infra-cloudflare-foundation-gerenciador-pro-v2.animaisfofinhos1983.workers.dev";
+const TURNSTILE_TEST_SITEKEY = "1x00000000000000000000AA";
 const TURNSTILE_TEST_PASS_SECRET = "1x0000000000000000000000000000000AA";
 const TURNSTILE_TEST_FAIL_SECRET = "2x0000000000000000000000000000000AA";
 const TURNSTILE_SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -65,10 +66,17 @@ function configuredTurnstileSecret(env) {
   return String(env.TURNSTILE_SECRET_KEY || "").trim();
 }
 
-function turnstileSecretFor(request, env) {
-  const configured = configuredTurnstileSecret(env);
-  if (configured) return configured;
+function configuredTurnstileSitekey(env) {
+  return String(env.TURNSTILE_SITE_KEY || "").trim();
+}
 
+function turnstileSitekeyFor(request, env) {
+  const host = new URL(request.url).hostname;
+  if (host === PREVIEW_HOST) return TURNSTILE_TEST_SITEKEY;
+  return configuredTurnstileSitekey(env);
+}
+
+function turnstileSecretFor(request, env) {
   const host = new URL(request.url).hostname;
   if (host === PREVIEW_HOST) {
     if (request.headers.get("X-GP-Turnstile-Test") === "force-fail") {
@@ -76,7 +84,7 @@ function turnstileSecretFor(request, env) {
     }
     return TURNSTILE_TEST_PASS_SECRET;
   }
-  return "";
+  return configuredTurnstileSecret(env);
 }
 
 async function validateTurnstile(request, env) {
@@ -129,7 +137,7 @@ async function validateTurnstile(request, env) {
       return { ok: false, error: "turnstile_invalid", status: 403 };
     }
 
-    if (configuredTurnstileSecret(env)) {
+    if (configuredTurnstileSecret(env) && new URL(request.url).hostname !== PREVIEW_HOST) {
       const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || "lead_register").trim();
       const expectedHostname = new URL(request.url).hostname;
       if (result?.action !== expectedAction || result?.hostname !== expectedHostname) {
@@ -186,6 +194,35 @@ function withSecurityHeaders(response, request) {
     statusText: response.statusText,
     headers
   });
+}
+
+async function serveRuntimeConfig(request, env) {
+  const asset = await env.ASSETS.fetch(request);
+  if (!asset.ok) return withSecurityHeaders(asset, request);
+
+  const template = await asset.text();
+  const marker = '"__GP_TURNSTILE_SITEKEY__"';
+  if (!template.includes(marker)) {
+    console.error("runtime_config_marker_missing");
+    return withSecurityHeaders(new Response("/* runtime config unavailable */", {
+      status: 503,
+      headers: {
+        "content-type": "application/javascript; charset=utf-8",
+        "cache-control": "no-store"
+      }
+    }), request);
+  }
+
+  const sitekey = turnstileSitekeyFor(request, env);
+  const body = template.replace(marker, JSON.stringify(sitekey));
+  const headers = new Headers(asset.headers);
+  headers.set("content-type", "application/javascript; charset=utf-8");
+  headers.set("cache-control", "no-store");
+
+  return withSecurityHeaders(new Response(body, {
+    status: 200,
+    headers
+  }), request);
 }
 
 function mirrorValue(value, max = 5000) {
@@ -300,6 +337,10 @@ async function authorizeMirrorWrite(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/config.js" && request.method === "GET") {
+      return serveRuntimeConfig(request, env);
+    }
 
     if (url.pathname === "/api/mirror/authorize" && request.method === "POST") {
       return authorizeMirrorWrite(request, env);
