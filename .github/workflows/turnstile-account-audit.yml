@@ -1,4 +1,3 @@
-# trigger: read-only capability recheck
 name: Turnstile account capability audit
 
 on:
@@ -14,20 +13,16 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ github.token }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
-      PR_NUMBER: '14'
     steps:
       - name: Verificar acesso Turnstile sem alterar widgets
-        id: turnstile
         shell: bash
         run: |
           set -euo pipefail
@@ -36,53 +31,19 @@ jobs:
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           code=$(tail -n1 <<<"$response")
           body=$(sed '$d' <<<"$response")
-          printf '%s' "$body" > /tmp/turnstile.json
-          echo "http_code=$code" >> "$GITHUB_OUTPUT"
-          if [ "$code" = 200 ] && jq -e '.success == true and (.result | type == "array")' /tmp/turnstile.json >/dev/null 2>&1; then
-            echo 'ok=true' >> "$GITHUB_OUTPUT"
-            count=$(jq '.result | length' /tmp/turnstile.json)
-            echo "count=$count" >> "$GITHUB_OUTPUT"
-            echo "PASS: Turnstile API acessível; widgets existentes=${count}"
-          else
-            echo 'ok=false' >> "$GITHUB_OUTPUT"
-            echo 'count=0' >> "$GITHUB_OUTPUT"
-            echo "Turnstile API indisponível (HTTP ${code})"
+          if [ "$code" != 200 ]; then
+            echo "FAIL: Turnstile API indisponível (HTTP ${code})"
+            echo "$body" | jq -c '{success,errors,messages}' 2>/dev/null || true
+            exit 1
           fi
-
-      - name: Atualizar auditoria no PR 14
-        shell: bash
-        env:
-          OK: ${{ steps.turnstile.outputs.ok }}
-          HTTP_CODE: ${{ steps.turnstile.outputs.http_code }}
-          COUNT: ${{ steps.turnstile.outputs.count }}
-        run: |
-          set -euo pipefail
-          marker='<!-- turnstile-account-audit -->'
+          jq -e '.success == true and (.result | type == "array")' <<<"$body" >/dev/null
+          count=$(jq '.result | length' <<<"$body")
+          echo "PASS: Turnstile API acessível; widgets existentes=${count}; nenhuma alteração executada."
           {
-            echo "$marker"
-            echo '### Turnstile — capability audit'
+            echo '## Turnstile account capability audit'
             echo
-            if [ "$OK" = true ]; then
-              echo "- ✅ API de Turnstile acessível com o token atual."
-              echo "- Widgets existentes detectados: ${COUNT}."
-              echo '- Nenhum widget foi criado, alterado ou removido.'
-              echo '- Próximo passo após escolher o domínio: criar/configurar widget Managed limitado ao hostname final.'
-            else
-              echo "- ⏳ API de Turnstile não acessível com o token atual (HTTP ${HTTP_CODE})."
-              echo '- Será necessário um token com `Turnstile Sites Write` antes da automação do widget.'
-              echo '- Nenhuma alteração foi feita.'
-            fi
-          } > /tmp/comment.md
-          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
-            --jq '.[] | select(.body | contains("<!-- turnstile-account-audit -->")) | .id' | head -n1 || true)
-          payload=$(jq -Rs '{body:.}' < /tmp/comment.md)
-          if [ -n "$existing" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" --input - <<<"$payload" >/dev/null
-          else
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --input - <<<"$payload" >/dev/null
-          fi
-
-      - name: Gate
-        if: steps.turnstile.outputs.ok != 'true'
-        shell: bash
-        run: exit 2
+            echo '- ✅ API de Turnstile acessível com o token atual.'
+            echo "- Widgets existentes: ${count}."
+            echo '- Nenhum widget foi criado, alterado ou removido.'
+            echo '- Após escolher o domínio, criar widget Managed restrito ao hostname final.'
+          } >> "$GITHUB_STEP_SUMMARY"
