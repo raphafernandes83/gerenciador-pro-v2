@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   reconcile:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -41,7 +41,7 @@ jobs:
         run: node scripts/reconcile-sheets.mjs
 
   smoke:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
