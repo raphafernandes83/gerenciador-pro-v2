@@ -26,6 +26,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 6ae08d3699ea3659100fe4ac443e79d9
+      GODADDY_PAT: ${{ secrets.GODADDY_PAT }}
     steps:
       - name: Consultar disponibilidade e preço sem registrar
         id: check
@@ -38,7 +39,14 @@ jobs:
           if [ -z "$raw" ]; then
             raw='gptrademanager.com,gptradingpro.com,gptraderpro.com,gptradinghub.com,gptradingmanager.com'
           fi
-          json=$(jq -nc --arg raw "$raw" '{domains:($raw|split(",")|map(gsub("^\\s+|\\s+$";""))|map(select(length>0)))}')
+
+          mapfile -t domains < <(tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d')
+          [ "${#domains[@]}" -gt 0 ] && [ "${#domains[@]}" -le 10 ] || { echo 'FAIL: informe entre 1 e 10 domínios'; exit 1; }
+          for domain in "${domains[@]}"; do
+            [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || { echo "FAIL: domínio inválido: $domain"; exit 1; }
+          done
+
+          json=$(printf '%s\n' "${domains[@]}" | jq -Rsc '{domains:(split("\n")|map(select(length>0)))}')
           response=$(curl -sS -w '\n%{http_code}' -X POST \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/registrar/domain-check" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
@@ -46,19 +54,64 @@ jobs:
             --data "$json")
           code=$(tail -n1 <<<"$response")
           body=$(sed '$d' <<<"$response")
-          if [ "$code" != '200' ]; then
-            echo "SKIP controlado: Registrar API não acessível com o token atual (HTTP ${code})."
-            echo 'Nenhuma compra, reserva ou alteração de domínio foi executada.'
-            echo '## Domain availability check' >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$code" = '200' ]; then
+            echo '## Disponibilidade de domínios — Cloudflare Registrar' >> "$GITHUB_STEP_SUMMARY"
             echo '' >> "$GITHUB_STEP_SUMMARY"
-            echo "- ⏳ Cloudflare Registrar API indisponível para o token atual (HTTP ${code})." >> "$GITHUB_STEP_SUMMARY"
-            echo '- Nenhuma compra foi executada.' >> "$GITHUB_STEP_SUMMARY"
+            echo '| Domínio | Registrável | Registro | Renovação | Moeda | Motivo |' >> "$GITHUB_STEP_SUMMARY"
+            echo '|---|---:|---:|---:|---|---|' >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.result.domains[] | "| \(.name) | \(.registrable) | \(.pricing.registration_cost // "-") | \(.pricing.renewal_cost // "-") | \(.pricing.currency // "-") | \(.reason // "-") |"' <<<"$body" >> "$GITHUB_STEP_SUMMARY"
+            jq -c '.result.domains[] | {name,registrable,tier,pricing,reason}' <<<"$body"
+            echo 'PASS: consulta Cloudflare read-only concluída; nenhum domínio foi registrado.'
             exit 0
           fi
-          echo '## Disponibilidade de domínios' >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Cloudflare Registrar indisponível para o token atual (HTTP ${code}); tentando fallback read-only GoDaddy se configurado."
+          if [ -z "${GODADDY_PAT:-}" ]; then
+            echo 'SKIP controlado: GODADDY_PAT não configurado.'
+            {
+              echo '## Domain availability check'
+              echo ''
+              echo "- ⏳ Cloudflare Registrar API indisponível para o token atual (HTTP ${code})."
+              echo '- ⏳ Fallback GoDaddy não configurado (`GODADDY_PAT` ausente).'
+              echo '- ✅ Nenhuma compra, reserva ou alteração de domínio foi executada.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo '## Disponibilidade de domínios — GoDaddy v3 (ACCURACY)' >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo '| Domínio | Registrável | Registro | Renovação | Moeda | Motivo |' >> "$GITHUB_STEP_SUMMARY"
-          echo '|---|---:|---:|---:|---|---|' >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.result.domains[] | "| \(.name) | \(.registrable) | \(.pricing.registration_cost // "-") | \(.pricing.renewal_cost // "-") | \(.pricing.currency // "-") | \(.reason // "-") |"' <<<"$body" >> "$GITHUB_STEP_SUMMARY"
-          jq -c '.result.domains[] | {name,registrable,tier,pricing,reason}' <<<"$body"
-          echo 'PASS: consulta read-only concluída; nenhum domínio foi registrado.'
+          echo '| Domínio | Disponível | Definitivo | 1 ano | Renovação | Moeda |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---:|---:|---:|---:|---|' >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+          for domain in "${domains[@]}"; do
+            gd=$(curl -sS -w '\n%{http_code}' --get \
+              'https://api.godaddy.com/v3/domains/check-availability' \
+              -H "Authorization: Bearer ${GODADDY_PAT}" \
+              -H 'Accept: application/json' \
+              --data-urlencode "domain=${domain}" \
+              --data-urlencode 'optimizeFor=ACCURACY')
+            gd_code=$(tail -n1 <<<"$gd")
+            gd_body=$(sed '$d' <<<"$gd")
+            if [ "$gd_code" != '200' ]; then
+              err=$(jq -r '.code // "HTTP_'"$gd_code"'"' <<<"$gd_body" 2>/dev/null || printf 'HTTP_%s' "$gd_code")
+              echo "FAIL: GoDaddy não conseguiu consultar ${domain}; ${err}"
+              echo "| ${domain} | erro | - | - | - | ${err} |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+              continue
+            fi
+
+            available=$(jq -r '.available // false' <<<"$gd_body")
+            definitive=$(jq -r '.definitive // false' <<<"$gd_body")
+            price=$(jq -r '[.prices[]? | select(.term == "YEAR" and .period == 1)][0].price.value // empty' <<<"$gd_body")
+            renewal=$(jq -r '[.prices[]? | select(.term == "YEAR" and .period == 1)][0].renewalPrice.value // empty' <<<"$gd_body")
+            currency=$(jq -r '[.prices[]? | select(.term == "YEAR" and .period == 1)][0].price.currencyCode // "-"' <<<"$gd_body")
+            if [ -n "$price" ]; then price_display=$(awk "BEGIN {printf \"%.2f\", ${price}/100}"); else price_display='-'; fi
+            if [ -n "$renewal" ]; then renewal_display=$(awk "BEGIN {printf \"%.2f\", ${renewal}/100}"); else renewal_display='-'; fi
+            echo "| ${domain} | ${available} | ${definitive} | ${price_display} | ${renewal_display} | ${currency} |" >> "$GITHUB_STEP_SUMMARY"
+            jq -c '{domain,available,definitive,inventory,prices}' <<<"$gd_body"
+          done
+
+          [ "$failed" -eq 0 ] || exit 1
+          echo 'PASS: GoDaddy v3 consultado em modo read-only/ACCURACY; nenhum domínio foi registrado.'
